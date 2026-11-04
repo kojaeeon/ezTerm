@@ -34,7 +34,29 @@ export function exposeDevApi() {
   (window as unknown as { __ezterm: typeof api }).__ezterm = api;
 }
 
+export interface LocalEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: number | null;
+  hidden: boolean;
+}
+export interface LocalListing {
+  path: string;
+  parent: string | null;
+  entries: LocalEntry[];
+}
+
 export const api = {
+  localFilesExplorer: (path: string) => invoke<void>('local_files_explorer', { path }),
+  localFilesIcons: (paths: string[]) => invoke<Record<string, string>>('local_files_icons', { paths }),
+  localFilesCopy: (connectionId: number, source: string, directory: string) =>
+    invoke<string>('local_files_copy', { connectionId, source, directory }),
+  localFilesClipboard: (path: string) => invoke<void>('local_files_clipboard', { path }),
+  localFilesOpen: (path: string) => invoke<void>('local_files_open', { path }),
+  localFilesList: (path: string) => invoke<LocalListing>('local_files_list', { path }),
+  localFilesRoots: () => invoke<string[]>('local_files_roots'),
   // Vault
   vaultStatus: () => invoke<VaultStatus>('vault_status'),
   vaultInit:   (password: string) => invoke<void>('vault_init', { password }),

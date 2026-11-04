@@ -208,8 +208,26 @@ fn build_local_command(program: &str, extra: &str) -> Result<CommandBuilder> {
         other => other,
     };
     let mut c = CommandBuilder::new(exe);
-    if exe.ends_with("pwsh.exe") || exe.ends_with("powershell.exe") {
+    let shell_name = std::path::Path::new(exe)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    if shell_name == "pwsh.exe" || shell_name == "powershell.exe" {
         c.arg("-NoLogo");
+        c.arg("-NoExit");
+        c.arg("-Command");
+        c.arg(concat!(
+            "$global:__eztermOriginalPrompt = $function:prompt; ",
+            "function global:prompt { ",
+            "$location = Get-Location; $path = ''; ",
+            "if ($location.Provider.Name -eq 'FileSystem') { $path = $location.ProviderPath }; ",
+            "[Console]::Write(([char]27) + ']777;ezterm-cwd;' + $path + ([char]27) + '\\'); ",
+            "if ($global:__eztermOriginalPrompt) { & $global:__eztermOriginalPrompt } else { 'PS> ' } }"
+        ));
+    } else if shell_name == "cmd.exe" {
+        // $P expands on every prompt, including after a cd /d.
+        c.env("PROMPT", "$E]777;ezterm-cwd;$P$E\\$P$G");
     }
     let cwd = extra.trim();
     if !cwd.is_empty() {
@@ -275,4 +293,84 @@ pub async fn spawn_from_session(
         output,
     )
     .await
+}
+
+#[cfg(all(test, windows))]
+mod copy_prompt_tests {
+    use super::*;
+
+    #[test]
+    fn cmd_and_powershell_report_changed_directory_through_conpty() {
+        for shell in ["cmd", "powershell"] {
+            let temp = tempfile::tempdir().unwrap();
+            let next = temp.path().join("한글 folder");
+            std::fs::create_dir(&next).unwrap();
+            let command = build_local_command(shell, temp.path().to_str().unwrap()).unwrap();
+            let pair = native_pty_system()
+                .openpty(PtySize {
+                    rows: 30,
+                    cols: 200,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .unwrap();
+            let mut child = pair.slave.spawn_command(command).unwrap();
+            drop(pair.slave);
+            let mut reader = pair.master.try_clone_reader().unwrap();
+            let writer = std::sync::Mutex::new(pair.master.take_writer().unwrap());
+            let (tx, rx) = std::sync::mpsc::channel();
+            let reader_thread = thread::spawn(move || {
+                let mut buffer = [0u8; 8192];
+                while let Ok(n) = reader.read(&mut buffer) {
+                    if n == 0 || tx.send(buffer[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+            });
+            let mut bytes = Vec::new();
+            let mut wait_for = |expected: &str| {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                while std::time::Instant::now() < deadline {
+                    if let Ok(chunk) = rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                        if chunk.windows(4).any(|value| value == b"\x1b[6n") {
+                            // ConPTY waits for the terminal's initial cursor report.
+                            let mut input = writer.lock().unwrap();
+                            input.write_all(b"\x1b[1;1R").unwrap();
+                            input.flush().unwrap();
+                        }
+                        bytes.extend(chunk);
+                        if String::from_utf8_lossy(&bytes).contains(expected) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            };
+            let initial = wait_for(&format!("\x1b]777;ezterm-cwd;{}", temp.path().display()));
+            let command = if shell == "cmd" {
+                format!("cd /d \"{}\"\r", next.display())
+            } else {
+                format!(
+                    "Set-Location -LiteralPath '{}'\r",
+                    next.display().to_string().replace('\'', "''")
+                )
+            };
+            {
+                let mut input = writer.lock().unwrap();
+                input.write_all(command.as_bytes()).unwrap();
+                input.flush().unwrap();
+            }
+            let changed = wait_for(&format!("\x1b]777;ezterm-cwd;{}", next.display()));
+            let _ = child.kill();
+            drop(writer);
+            drop(pair.master);
+            drop(rx);
+            let _ = reader_thread.join();
+            assert!(
+                initial && changed,
+                "{shell} failed to report current folder through ConPTY: {}",
+                String::from_utf8_lossy(&bytes)
+            );
+        }
+    }
 }

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { PanelLeftOpen } from 'lucide-react';
+import { HardDrive, PanelLeftOpen } from 'lucide-react';
+import { LocalFilesPane } from './local-files-pane';
 import { api } from '@/lib/tauri';
 import { useTabs } from '@/lib/tabs-store';
 import { toast } from '@/lib/toast';
@@ -34,6 +35,7 @@ const SIDEBAR_MAX = 520;
 const SIDEBAR_DEFAULT = 240;
 
 export function MainShell({ onLock }: { onLock: () => void }) {
+  const [localFilesOpen, setLocalFilesOpen] = useState(false);
   const collapsed  = useTabs((s) => s.sidebarCollapsed);
   const toggle     = useTabs((s) => s.toggleSidebar);
 
@@ -257,8 +259,16 @@ export function MainShell({ onLock }: { onLock: () => void }) {
             />
           </aside>
         )}
-        <div className="flex-1 min-w-0 min-h-0">
-          <TabsShell />
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          <div className="h-8 px-2 border-b border-border bg-surface flex items-center shrink-0">
+            <button type="button" aria-pressed={localFilesOpen} onClick={() => setLocalFilesOpen((open) => !open)} className="flex items-center gap-1.5 px-2 py-1 rounded text-xs hover:bg-surface2 focus-ring" title="Show or hide local file explorer">
+              <HardDrive size={13} />Local files
+            </button>
+          </div>
+          <div className="flex flex-1 min-w-0 min-h-0">
+            {localFilesOpen && <LocalFilesPane onClose={() => setLocalFilesOpen(false)} />}
+            <div className="flex-1 min-w-0 min-h-0"><TabsShell /></div>
+          </div>
         </div>
       </div>
       <StatusBar onLock={onLock} onOpenUpdater={() => setUpdateDialogOpen(true)} />

@@ -1,5 +1,12 @@
 # ezTerm
 
+This Windows-focused fork adds an integrated **local file explorer** with native
+Windows file icons, a configurable Home folder, a browser-style bookmarks bar,
+Explorer and clipboard context-menu actions, and drag-to-copy into local
+PowerShell/CMD sessions. See [the local file explorer guide](docs/local-files.md)
+for usage, limitations, and validation. The upstream project is
+[ZerosAndOnesLLC/ezTerm](https://github.com/ZerosAndOnesLLC/ezTerm).
+
 A free, open-source Windows SSH client with a MobaXterm-style session manager,
 encrypted credential vault, xterm-compatible terminal, SFTP side-pane, WSL and
 local-shell tabs, and X11 forwarding.

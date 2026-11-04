@@ -30,6 +30,8 @@ const AUTOSCROLL_EDGE_PX = 28;
 const AUTOSCROLL_SPEED_PX = 10;
 
 export interface PointerDragHandlers {
+  /** File-browser rows are accessible buttons but can also be dragged. */
+  allowButton?: boolean;
   /** Pointer crossed the drag threshold — show drag visuals. */
   onDragStart(): void;
   /** Pointer moved while dragging (also fired during auto-scroll ticks).
@@ -82,7 +84,7 @@ export function beginPointerDrag(
   // the pressed element (close, delete, panes) are clicks, never drag
   // handles.
   if (e.button !== 0 || e.pointerType === 'touch') return undefined;
-  if ((e.target as HTMLElement).closest('button')) return undefined;
+  if (!handlers.allowButton && (e.target as HTMLElement).closest('button')) return undefined;
 
   const pointerId = e.pointerId;
   const startX = e.clientX;

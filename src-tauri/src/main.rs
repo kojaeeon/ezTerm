@@ -6,6 +6,7 @@ mod db;
 mod error;
 mod import;
 mod local;
+mod local_icons;
 mod log_redacted;
 mod sftp;
 mod ssh;
@@ -41,6 +42,13 @@ async fn main() {
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::files::local_files_list,
+            commands::files::local_files_roots,
+            commands::files::local_files_copy,
+            commands::files::local_files_icons,
+            commands::files::local_files_explorer,
+            commands::files::local_files_clipboard,
+            commands::files::local_files_open,
             commands::folders::folder_list,
             commands::folders::folder_create,
             commands::folders::folder_rename,

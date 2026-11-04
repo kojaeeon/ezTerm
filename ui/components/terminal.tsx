@@ -25,6 +25,7 @@ import {
   shouldRetryReattach,
 } from '@/lib/reconnect';
 import { ReconnectLoop } from '@/lib/reconnect-loop';
+import { LOCAL_FILE_DROP, parseLocalCwd, type LocalFileDrop } from '@/lib/local-file-drop';
 
 /** How a connect attempt ended — drives the auto-reconnect loop.
  *  - `fatal`: the user has to act (host-key prompt, auth fix, X server,
@@ -110,6 +111,9 @@ function safeFit(bundle: TerminalBundle) {
 }
 
 export function TerminalView({ tab, visible }: Props) {
+  const localCwdRef = useRef<string | null>(null);
+  const [localCwd, setLocalCwd] = useState<string | null>(null);
+  const localCopyBusy = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const bundleRef    = useRef<TerminalBundle | null>(null);
   /** App-wide palette (Settings → Appearance). Subscribed so a change
@@ -124,6 +128,34 @@ export function TerminalView({ tab, visible }: Props) {
   const resizeObsRef = useRef<ResizeObserver | null>(null);
   const resizeRafRef = useRef<null | (() => void)>(null);
   const connectionIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (tab.session.session_kind !== 'local') return;
+    const onDrop = (event: Event) => {
+      const detail = (event as CustomEvent<LocalFileDrop>).detail;
+      if (detail?.tabId !== tab.tabId) return;
+      const cid = connectionIdRef.current;
+      const directory = localCwdRef.current;
+      if (cid === null || tab.status !== 'connected' || !directory) {
+        toast.danger('Cannot copy file', 'The shell has not reported its current folder. Reconnect this PowerShell or CMD tab and wait for its prompt.');
+        return;
+      }
+      if (localCopyBusy.current) {
+        toast.info('Copy in progress', 'Wait for the current file copy to finish.');
+        return;
+      }
+      localCopyBusy.current = true;
+      toast.info('Copying file', directory);
+      api.localFilesCopy(cid, detail.source, directory)
+        .then((destination) => {
+          toast.success('File copied', destination);
+          window.dispatchEvent(new Event('ezterm:local-files-changed'));
+        })
+        .catch((e) => toast.danger('File copy failed', errMessage(e)))
+        .finally(() => { localCopyBusy.current = false; });
+    };
+    window.addEventListener(LOCAL_FILE_DROP, onDrop);
+    return () => window.removeEventListener(LOCAL_FILE_DROP, onDrop);
+  }, [tab.tabId, tab.session.session_kind, tab.status]);
   const cancelledRef = useRef(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
@@ -197,6 +229,8 @@ export function TerminalView({ tab, visible }: Props) {
    *  keystroke listener, unlisten close/error. `disconnect: false` is for
    *  the close event, where the backend side is already gone. */
   const teardownConnection = useCallback((opts: { disconnect: boolean }) => {
+    localCwdRef.current = null;
+    setLocalCwd(null);
     const c = connRef.current;
     if (!c) return;
     connRef.current = null;
@@ -537,6 +571,15 @@ export function TerminalView({ tab, visible }: Props) {
         else if (mode === 'visual') flashBell();
       },
     });
+    if (tab.session.session_kind === 'local') {
+      bundle.terminal.parser.registerOscHandler(777, (value) => {
+        if (!value.startsWith('ezterm-cwd;')) return false;
+        const cwd = parseLocalCwd(value);
+        localCwdRef.current = cwd;
+        setLocalCwd(cwd);
+        return true;
+      });
+    }
     // Copy-on-select (off by default): mirrors PuTTY / MobaXterm. Read
     // per event so the Settings switch applies without a reopen.
     bundle.terminal.onSelectionChange(() => {
@@ -833,7 +876,8 @@ export function TerminalView({ tab, visible }: Props) {
 
   return (
     <div
-      className={`relative h-full w-full ${bellFlash ? 'ring-2 ring-inset ring-warning' : ''}`}
+      data-local-copy-tab={tab.session.session_kind === 'local' && tab.status === 'connected' ? tab.tabId : undefined}
+      className={`group relative h-full w-full data-[local-copy-hover=true]:ring-2 data-[local-copy-hover=true]:ring-inset data-[local-copy-hover=true]:ring-accent ${bellFlash ? 'ring-2 ring-inset ring-warning' : ''}`}
       // Palette background on the outer element, not the xterm container:
       // the 4 px padding ring then matches a light palette, and the
       // container stays transparent so the visual-bell inset ring (drawn
@@ -844,6 +888,11 @@ export function TerminalView({ tab, visible }: Props) {
       tabIndex={0}
     >
       <div ref={containerRef} className="h-full w-full p-1" />
+      <div className="pointer-events-none absolute inset-0 z-40 hidden group-data-[local-copy-hover=true]:flex items-center justify-center bg-bg/70">
+        <div className="max-w-[90%] p-4 border border-accent rounded bg-surface text-fg text-sm break-words">
+          {localCwd ? <>Copy file to:<br /><span className="font-mono">{localCwd}</span></> : 'Waiting for the shell to report its folder…'}
+        </div>
+      </div>
       {pendingPaste !== null && (
         <ConfirmDialog
           kind="danger"
