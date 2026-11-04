@@ -7,6 +7,10 @@ PowerShell/CMD sessions. See [the local file explorer guide](docs/local-files.md
 for usage, limitations, and validation. The upstream project is
 [ZerosAndOnesLLC/ezTerm](https://github.com/ZerosAndOnesLLC/ezTerm).
 
+Empty master passwords are supported: leave both setup fields blank and press
+Enter. For existing vaults, change the password to an empty value after unlocking
+with the current password. See the guide for details.
+
 A free, open-source Windows SSH client with a MobaXterm-style session manager,
 encrypted credential vault, xterm-compatible terminal, SFTP side-pane, WSL and
 local-shell tabs, and X11 forwarding.

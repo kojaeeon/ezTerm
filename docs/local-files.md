@@ -48,6 +48,18 @@ folder request cannot replace a newer one.
 This is a local modification of upstream 1.15.0. Installing an upstream update
 may replace the custom executable and remove this panel.
 
+## Optional empty master password
+
+This fork allows an empty master password. On first launch, leave both password
+fields empty and press Enter. Subsequent launches still show the unlock screen;
+press Enter to submit the empty password.
+
+For an existing password-protected vault, unlock with its current password first,
+then use Change master password: enter the current password and leave both new
+password fields empty. The credentials are re-encrypted with the chosen password;
+existing nonempty-password vaults cannot be unlocked by submitting an empty one.
+An empty password can also be changed back to a nonempty password later.
+
 ## Validation
 
 The bookmark parser tests cover persisted home, renamed favorites, malformed

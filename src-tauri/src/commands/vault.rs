@@ -48,14 +48,7 @@ pub async fn vault_init(state: State<'_, AppState>, password: String) -> Result<
 }
 
 async fn vault_init_inner(state: &State<'_, AppState>, password: &str) -> Result<()> {
-    if password.len() < 8 {
-        return Err(AppError::Validation(
-            "master password must be at least 8 chars".into(),
-        ));
-    }
-    if password.len() > MAX_PASSWORD_LEN {
-        return Err(AppError::Validation("password too long".into()));
-    }
+    validate_master_password(password)?;
     let new_state = vault::init(&state.db, password).await?;
     *state.vault.write().await = new_state;
     Ok(())
@@ -70,9 +63,7 @@ pub async fn vault_unlock(state: State<'_, AppState>, password: String) -> Resul
 }
 
 async fn vault_unlock_inner(state: &State<'_, AppState>, password: &str) -> Result<()> {
-    // Deliberately do not enforce a minimum length here: a user who set their
-    // password before the 8-char floor was introduced must still be able to
-    // unlock their vault.
+    // Empty passwords are valid when explicitly chosen at setup or rotation.
     if password.len() > MAX_PASSWORD_LEN {
         return Err(AppError::Validation("password too long".into()));
     }
@@ -173,7 +164,7 @@ async fn vault_change_password_inner(
     if old_password.len() > MAX_PASSWORD_LEN {
         return Err(AppError::Validation("old password too long".into()));
     }
-    validate_new_password(new_password)?;
+    validate_master_password(new_password)?;
     if old_password == new_password {
         return Err(AppError::Validation(
             "new password must differ from old password".into(),
@@ -375,31 +366,26 @@ pub async fn vault_reset(state: State<'_, AppState>, confirmation: String) -> Re
 
 // ===== helpers ===========================================================
 
-fn validate_new_password(new_password: &str) -> Result<()> {
-    if new_password.len() < 12 {
-        return Err(AppError::Validation(
-            "new master password must be at least 12 characters".into(),
-        ));
-    }
-    if new_password.len() > MAX_PASSWORD_LEN {
-        return Err(AppError::Validation("new password too long".into()));
-    }
-    // Require at least two character classes so a 12×'a' string is
-    // rejected. Cheap floor; the UI strength meter handles nuance.
-    let has_lower = new_password.chars().any(|c| c.is_ascii_lowercase());
-    let has_upper = new_password.chars().any(|c| c.is_ascii_uppercase());
-    let has_digit = new_password.chars().any(|c| c.is_ascii_digit());
-    let has_other = new_password.chars().any(|c| !c.is_ascii_alphanumeric());
-    let classes = [has_lower, has_upper, has_digit, has_other]
-        .into_iter()
-        .filter(|b| *b)
-        .count();
-    if classes < 2 {
-        return Err(AppError::Validation(
-            "new password must mix at least two of: lowercase, uppercase, digit, symbol".into(),
-        ));
+fn validate_master_password(password: &str) -> Result<()> {
+    // This fork permits an empty password; retain the resource limit.
+    if password.len() > MAX_PASSWORD_LEN {
+        return Err(AppError::Validation("password too long".into()));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod empty_password_policy_tests {
+    use super::*;
+
+    #[test]
+    fn empty_password_is_accepted_with_resource_limit() {
+        for password in ["", "a", "short", "한글"] {
+            assert!(validate_master_password(password).is_ok());
+        }
+        assert!(validate_master_password(&"x".repeat(MAX_PASSWORD_LEN)).is_ok());
+        assert!(validate_master_password(&"x".repeat(MAX_PASSWORD_LEN + 1)).is_err());
+    }
 }
 
 fn check_cooldown(state: &State<'_, AppState>, now: i64) -> Result<()> {

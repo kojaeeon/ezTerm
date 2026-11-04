@@ -42,7 +42,6 @@ export function ChangePasswordDialog({ onClose, onChanged }: Props) {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (newPw.length < 8) { setErr('New password must be at least 8 characters'); return; }
     if (newPw !== confirm) { setErr('New passwords do not match'); return; }
     if (oldPw === newPw) { setErr('New password must differ from old password'); return; }
     setBusy(true);
@@ -100,6 +99,7 @@ export function ChangePasswordDialog({ onClose, onChanged }: Props) {
           <KeyRound size={13} />
           Re-encrypts every credential and sync passphrase. A snapshot of the current vault is saved first.
         </div>
+        <p className="text-xs text-muted">새 비밀번호와 확인란을 모두 비우면, 다음부터 Enter만 눌러 잠금을 해제할 수 있습니다.</p>
 
         <PasswordField
           ref={firstFieldRef}
@@ -158,7 +158,7 @@ export function ChangePasswordDialog({ onClose, onChanged }: Props) {
           </button>
           <button
             type="submit"
-            disabled={busy || !oldPw || !newPw || !confirm}
+            disabled={busy}
             className="px-3 py-1.5 rounded text-sm font-medium bg-accent text-white hover:brightness-110 disabled:opacity-50 focus-ring"
           >
             {busy ? 'Changing…' : 'Change password'}

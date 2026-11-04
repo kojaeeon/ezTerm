@@ -30,6 +30,52 @@ async fn init_then_unlock_roundtrip() {
 }
 
 #[tokio::test]
+async fn empty_password_setup_unlock_and_rotation_preserve_credentials() {
+    let pool = mem_pool().await;
+    let state = init(&pool, "").await.unwrap();
+    assert!(unlock(&pool, "").await.unwrap().is_unlocked());
+    assert!(matches!(
+        unlock(&pool, "wrong").await,
+        Err(AppError::BadPassword)
+    ));
+    let (nonce, ciphertext) = encrypt_with(&state, b"saved-secret").unwrap();
+    sqlx::query("INSERT INTO credentials (kind, label, nonce, ciphertext) VALUES (?, ?, ?, ?)")
+        .bind("password")
+        .bind("empty-password-test")
+        .bind(nonce)
+        .bind(ciphertext)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let empty_key = old_key(&pool, "").await;
+    change_password(&pool, &empty_key, "temporary-password")
+        .await
+        .unwrap();
+    assert!(matches!(
+        unlock(&pool, "").await,
+        Err(AppError::BadPassword)
+    ));
+    let temporary_key = old_key(&pool, "temporary-password").await;
+    change_password(&pool, &temporary_key, "").await.unwrap();
+    assert!(matches!(
+        unlock(&pool, "temporary-password").await,
+        Err(AppError::BadPassword)
+    ));
+    let unlocked = unlock(&pool, "").await.unwrap();
+    let (nonce, ciphertext): (Vec<u8>, Vec<u8>) = sqlx::query_as(
+        "SELECT nonce, ciphertext FROM credentials WHERE label = 'empty-password-test'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        decrypt_with(&unlocked, &nonce, &ciphertext).unwrap(),
+        b"saved-secret"
+    );
+}
+
+#[tokio::test]
 async fn wrong_password_rejected() {
     let pool = mem_pool().await;
     let _ = init(&pool, "right").await.unwrap();

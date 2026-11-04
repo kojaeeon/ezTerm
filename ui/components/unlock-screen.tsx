@@ -44,7 +44,6 @@ export function UnlockScreen({ status, onUnlocked, onStatusChanged }: Props) {
     e.preventDefault();
     setErr(null);
     if (firstRun && pw !== pw2) { setErr('Passwords do not match'); return; }
-    if (firstRun && pw.length < 8) { setErr('Minimum 8 characters'); return; }
     setBusy(true);
     try {
       if (firstRun) await api.vaultInit(pw);
@@ -73,8 +72,8 @@ export function UnlockScreen({ status, onUnlocked, onStatusChanged }: Props) {
             </h1>
             <p className="text-xs text-muted mt-0.5">
               {firstRun
-                ? 'Encrypts your vault. Cannot be recovered.'
-                : 'Enter your master password.'}
+                ? '비워두면 Enter만 눌러 사용할 수 있습니다.'
+                : '비밀번호를 입력하세요. 빈 비밀번호로 설정했다면 Enter를 누르세요.'}
             </p>
           </div>
         </div>
