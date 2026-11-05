@@ -41,6 +41,16 @@ recent prompt's folder, captured at the instant of the drop.
 
 Existing SFTP upload/download actions remain in the SFTP pane.
 
+## SFTP folder favorites
+
+The SFTP pane has a favorites bar below its path toolbar. After connecting,
+click the star to save or remove the current remote folder. Click a bookmark
+to navigate; right-click it to rename or delete it. Up to 100 folders can be
+saved per server, port, and username. Tabs for the same endpoint share changes
+immediately, and bookmarks persist locally across app restarts. WSL favorites
+are stored separately by distribution and user. Remote paths remain
+case-sensitive. These bookmarks are local UI preferences, not vault-synced data.
+
 Backend directory enumeration runs on a blocking worker, and the IPC commands
 require the vault to be unlocked. Navigation discards stale responses so a slow
 folder request cannot replace a newer one.

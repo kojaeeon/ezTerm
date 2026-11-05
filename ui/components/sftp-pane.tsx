@@ -15,6 +15,7 @@ import {
 import { toast } from '@/lib/toast';
 import { ContextMenu, type MenuItem } from './context-menu';
 import { SftpBreadcrumb } from './sftp-breadcrumb';
+import { SftpFavorites } from './sftp-favorites';
 import { SftpFileRow } from './sftp-file-row';
 import { TransferStatus, type TrackedTransfer } from './transfer-status';
 import { ConfirmDialog } from './confirm-dialog';
@@ -630,6 +631,10 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
           <RefreshCw size={13} />
         </button>
       </div>
+
+      <SftpFavorites key={JSON.stringify([tab.session.session_kind, tab.session.host, tab.session.port, tab.session.username])}
+        session={tab.session} path={tab.cwd} enabled={opened && tab.status === 'connected'}
+        onNavigate={(path) => setCwd(tab.tabId, path)} />
 
       {error && (
         <div
