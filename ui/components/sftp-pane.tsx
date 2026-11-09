@@ -222,6 +222,18 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
     setAnchor(null);
   }, [tab.cwd]);
 
+  async function navigateToAddress(address: string) {
+    const cid = tab.connectionId;
+    if (cid == null || !opened) throw new Error('SFTP is not connected.');
+    const requested = address.startsWith('/') ? address : joinRemote(tab.cwd, address);
+    const resolved = await api.sftpRealpath(cid, requested);
+    // Check that the target is a readable directory before changing the address.
+    await api.sftpList(cid, resolved);
+    const current = useTabs.getState().tabs.find((t) => t.tabId === tab.tabId);
+    if (current?.connectionId !== cid || current.cwd !== tab.cwd) return;
+    setCwd(tab.tabId, resolved);
+  }
+
   function navigateInto(e: SftpEntry) {
     // Folder links have is_dir set, so they open like folders. A link we
     // couldn't resolve in time is tried too; the listing reports an error
@@ -601,7 +613,7 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
     >
       <div className="h-8 px-1.5 border-b border-border flex items-center gap-1 shrink-0">
         <div className="flex-1 min-w-0">
-          <SftpBreadcrumb path={tab.cwd} onNavigate={(p) => setCwd(tab.tabId, p)} />
+          <SftpBreadcrumb key={`${tab.connectionId}:${tab.cwd}`} path={tab.cwd} onNavigate={navigateToAddress} disabled={!opened} />
         </div>
         <button
           type="button"
