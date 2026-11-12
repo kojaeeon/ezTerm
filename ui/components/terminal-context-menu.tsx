@@ -10,6 +10,9 @@ export interface TerminalMenuProps {
   onClear:      () => void;
   onFind:       () => void;
   onFont:       () => void;
+  /** Available for local shells; disabled until the shell reports its folder. */
+  onOpenExplorer?: () => void;
+  canOpenExplorer?: boolean;
   /** Present only for tabs running in a persistent tmux/screen session. */
   onEndRemote?: () => void;
   onClose:      () => void;
@@ -25,6 +28,12 @@ export function TerminalContextMenu(p: TerminalMenuProps) {
     { label: 'Font…',            shortcut: 'Ctrl+Wheel',   onClick: p.onFont },
     { label: 'Clear scrollback', onClick: p.onClear },
   ];
+  if (p.onOpenExplorer) {
+    items.push(
+      { separator: true },
+      { label: 'Open in File Explorer', disabled: !p.canOpenExplorer, onClick: p.onOpenExplorer },
+    );
+  }
   if (p.onEndRemote) {
     items.push(
       { separator: true },

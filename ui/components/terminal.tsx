@@ -970,6 +970,14 @@ export function TerminalView({ tab, visible }: Props) {
           onClear={() => { bundleRef.current?.terminal.clear(); setMenu(null); }}
           onFind={() => { setFind(true); setMenu(null); }}
           onFont={() => { setFontPicker(true); setMenu(null); }}
+          canOpenExplorer={!!localCwd && tab.status === 'connected'}
+          onOpenExplorer={tab.session.session_kind === 'local' ? () => {
+            setMenu(null);
+            const directory = localCwdRef.current;
+            if (!directory || tab.status !== 'connected') return;
+            api.localFilesExplorer(directory)
+              .catch((e) => toast.danger('Could not open File Explorer', errMessage(e)));
+          } : undefined}
           onEndRemote={
             persistentLive && tab.status === 'connected'
               ? () => { setConfirmEndRemote(true); setMenu(null); }
