@@ -1,7 +1,17 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { CaseSensitive, ChevronDown, ChevronUp, Regex, X } from 'lucide-react';
-import type { SearchAddon } from '@xterm/addon-search';
+import type { ISearchOptions, SearchAddon } from '@xterm/addon-search';
+
+// Decorations also enable the addon's result-count events.
+const SEARCH_DECORATIONS: NonNullable<ISearchOptions['decorations']> = {
+  matchBackground: '#725500',
+  matchBorder: '#eab308',
+  matchOverviewRuler: '#eab308',
+  activeMatchBackground: '#9a3412',
+  activeMatchBorder: '#fb923c',
+  activeMatchColorOverviewRuler: '#fb923c',
+};
 
 export function FindOverlay({ search, onClose }: { search: SearchAddon; onClose: () => void }) {
   const [q, setQ]   = useState('');
@@ -9,30 +19,39 @@ export function FindOverlay({ search, onClose }: { search: SearchAddon; onClose:
   const [re, setRe] = useState(false);
   const [result, setResult] = useState<{ idx: number; count: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  let invalidRegex = false;
+  if (re && q) {
+    try { new RegExp(q); } catch { invalidRegex = true; }
+  }
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // Wire the search addon's result callback so the match counter reflects
-  // reality. Guard the optional API — older versions of the addon don't
-  // expose `onDidChangeResults`.
   useEffect(() => {
-    const addon = search as unknown as {
-      onDidChangeResults?: (cb: (r: { resultIndex: number; resultCount: number }) => void) => {
-        dispose: () => void;
-      };
-    };
-    if (!addon.onDidChangeResults) return;
-    const sub = addon.onDidChangeResults(({ resultIndex, resultCount }) => {
+    const sub = search.onDidChangeResults(({ resultIndex, resultCount }) => {
       setResult(resultCount > 0 ? { idx: resultIndex + 1, count: resultCount } : null);
     });
-    return () => sub.dispose();
+    return () => {
+      sub.dispose();
+      search.clearDecorations();
+    };
   }, [search]);
 
+  // Debounce full-buffer highlighting while typing. Counting reuses the addon's
+  // bounded highlight results (default limit: 1000), with no separate scan.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      search.findNext(invalidRegex ? '' : q, {
+        caseSensitive, regex: re, incremental: true, decorations: SEARCH_DECORATIONS,
+      });
+    }, q && !invalidRegex ? 200 : 0);
+    return () => window.clearTimeout(timer);
+  }, [search, q, caseSensitive, re, invalidRegex]);
+
   function runNext() {
-    if (q) search.findNext(q, { caseSensitive, regex: re });
+    if (q && !invalidRegex) search.findNext(q, { caseSensitive, regex: re, decorations: SEARCH_DECORATIONS });
   }
   function runPrev() {
-    if (q) search.findPrevious(q, { caseSensitive, regex: re });
+    if (q && !invalidRegex) search.findPrevious(q, { caseSensitive, regex: re, decorations: SEARCH_DECORATIONS });
   }
 
   return (
@@ -47,11 +66,12 @@ export function FindOverlay({ search, onClose }: { search: SearchAddon; onClose:
         }}
         placeholder="Find"
         aria-label="Find"
+        aria-invalid={invalidRegex}
         className="bg-surface2 border border-border rounded-sm px-2 py-1 outline-none focus:border-accent w-44"
       />
       {q && (
-        <span className="text-muted tabular-nums px-1 min-w-[48px] text-center">
-          {result ? `${result.idx}/${result.count}` : '0/0'}
+        <span aria-live="polite" className="text-muted tabular-nums px-1 min-w-[48px] text-center">
+          {invalidRegex ? 'Invalid regex' : result ? `${result.idx || '–'}/${result.count}${result.count >= 1000 ? '+' : ''}` : '0/0'}
         </span>
       )}
       <button
