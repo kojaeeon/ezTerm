@@ -3,6 +3,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { AlertCircle, Loader2, PlugZap } from 'lucide-react';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { terminalLogFilename, terminalLogText } from '@/lib/terminal-log';
 import { api, errMessage } from '@/lib/tauri';
 import { toast } from '@/lib/toast';
 import { createTerminal, type TerminalBundle } from '@/lib/xterm';
@@ -114,6 +116,7 @@ export function TerminalView({ tab, visible }: Props) {
   const localCwdRef = useRef<string | null>(null);
   const [localCwd, setLocalCwd] = useState<string | null>(null);
   const localCopyBusy = useRef(false);
+  const logSaveBusy = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const bundleRef    = useRef<TerminalBundle | null>(null);
   /** App-wide palette (Settings → Appearance). Subscribed so a change
@@ -773,6 +776,31 @@ export function TerminalView({ tab, visible }: Props) {
     await writeText(sel);
   }
 
+  async function doSaveLog() {
+    setMenu(null);
+    const terminal = bundleRef.current?.terminal;
+    if (!terminal || logSaveBusy.current) return;
+    logSaveBusy.current = true;
+    try {
+      // Snapshot at the click, before the user spends time in the save dialog.
+      const content = terminalLogText(terminal.buffer.active);
+      const tabName = getSetting('appearance.tabLabel') === 'userhost' && tab.session.username
+        ? `${tab.session.username}@${tab.session.host}` : tab.session.name;
+      const path = await saveDialog({
+        title: 'Save terminal output',
+        defaultPath: terminalLogFilename(tabName),
+        filters: [{ name: 'Log file', extensions: ['log'] }],
+      });
+      if (!path) return;
+      await api.terminalSaveLog(path, content);
+      toast.success('Terminal log saved', path);
+    } catch (e) {
+      toast.danger('Could not save terminal log', errMessage(e));
+    } finally {
+      logSaveBusy.current = false;
+    }
+  }
+
   /** Apply a font change live to the xterm instance, the ref, and any
    *  visible state. Called from the Font popover on every tweak. */
   function applyFont(next: { fontSize: number; fontFamily: string }) {
@@ -969,6 +997,7 @@ export function TerminalView({ tab, visible }: Props) {
           onSelectAll={() => { bundleRef.current?.terminal.selectAll(); setMenu(null); }}
           onClear={() => { bundleRef.current?.terminal.clear(); setMenu(null); }}
           onFind={() => { setFind(true); setMenu(null); }}
+          onSaveLog={() => { void doSaveLog(); }}
           onFont={() => { setFontPicker(true); setMenu(null); }}
           canOpenExplorer={!!localCwd && tab.status === 'connected'}
           onOpenExplorer={tab.session.session_kind === 'local' ? () => {

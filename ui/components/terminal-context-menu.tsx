@@ -9,6 +9,7 @@ export interface TerminalMenuProps {
   onSelectAll:  () => void;
   onClear:      () => void;
   onFind:       () => void;
+  onSaveLog:    () => void;
   onFont:       () => void;
   /** Available for local shells; disabled until the shell reports its folder. */
   onOpenExplorer?: () => void;
@@ -24,6 +25,7 @@ export function TerminalContextMenu(p: TerminalMenuProps) {
     { label: 'Paste',            shortcut: 'Shift+Insert', onClick: p.onPaste },
     { label: 'Select All',       onClick: p.onSelectAll },
     { label: 'Find…',            shortcut: 'Ctrl+Shift+F', onClick: p.onFind },
+    { label: 'Save output as log…', onClick: p.onSaveLog },
     { separator: true },
     { label: 'Font…',            shortcut: 'Ctrl+Wheel',   onClick: p.onFont },
     { label: 'Clear scrollback', onClick: p.onClear },

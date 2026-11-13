@@ -49,6 +49,8 @@ export interface LocalListing {
 }
 
 export const api = {
+  terminalSaveLog: (path: string, content: string) =>
+    invoke<void>('terminal_save_log', { path, content }),
   localFilesExplorer: (path: string) => invoke<void>('local_files_explorer', { path }),
   localFilesIcons: (paths: string[]) => invoke<Record<string, string>>('local_files_icons', { paths }),
   localFilesCopy: (connectionId: number, source: string, directory: string) =>

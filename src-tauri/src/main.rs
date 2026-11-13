@@ -42,6 +42,7 @@ async fn main() {
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            commands::terminal::terminal_save_log,
             commands::files::local_files_list,
             commands::files::local_files_roots,
             commands::files::local_files_copy,
