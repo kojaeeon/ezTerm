@@ -1,0 +1,65 @@
+name: Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/windows-exe.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-exe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ezterm.exe (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: windows-exe-x64
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
+
+      - name: Install UI dependencies
+        run: npm --prefix ui ci
+
+      - name: Build standalone EXE
+        shell: pwsh
+        run: |
+          # The UI is embedded by Tauri's beforeBuildCommand.
+          # EXE-only builds do not bundle the optional VcXsrv distribution.
+          '{"bundle":{"resources":[],"createUpdaterArtifacts":false}}' | Set-Content -Path exe-build.json
+          cargo tauri build --target x86_64-pc-windows-msvc --no-bundle --config exe-build.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path 'target/x86_64-pc-windows-msvc/release/ezterm.exe')) {
+            throw 'ezterm.exe was not produced'
+          }
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v6
+        with:
+          name: ezTerm-windows-x64-exe
+          path: target/x86_64-pc-windows-msvc/release/ezterm.exe
+          if-no-files-found: error
+          retention-days: 14
