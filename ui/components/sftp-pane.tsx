@@ -1,4 +1,5 @@
 'use client';
+import { FILE_MODIFIED_COL_W } from '@/lib/file-date';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Inbox, Loader2, RefreshCw, Upload, UploadCloud } from 'lucide-react';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
@@ -114,15 +115,15 @@ const ROW_PAD_PX = 8;
 
 /** `grid-template-columns` for header and file rows. Name is at least the
  *  stored width and grows to fill spare pane width; Size is fixed to its
- *  stored width; Mode never changes (nine monospace chars). */
+ *  stored width; Modified has a fixed timestamp width; Mode never changes (nine monospace chars). */
 function sftpGridTemplate(c: SftpColumns): string {
-  return `minmax(${c.name}px, 1fr) ${c.size}px ${SFTP_MODE_COL_W}px`;
+  return `minmax(${c.name}px, 1fr) ${c.size}px ${FILE_MODIFIED_COL_W}px ${SFTP_MODE_COL_W}px`;
 }
 
 /** Total width the columns need; past the pane width the list scrolls
  *  horizontally rather than squeezing Name below its stored width. */
 function sftpColumnsMinWidth(c: SftpColumns): number {
-  return c.name + c.size + SFTP_MODE_COL_W + 2 * ROW_GAP_PX + 2 * ROW_PAD_PX;
+  return c.name + c.size + FILE_MODIFIED_COL_W + SFTP_MODE_COL_W + 3 * ROW_GAP_PX + 2 * ROW_PAD_PX;
 }
 
 export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: boolean }) {
@@ -740,6 +741,7 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
                 label="Resize Size column"
               />
             </span>
+            <span role="columnheader">수정일시</span>
             <span role="columnheader">Mode</span>
           </div>
           {!opened && tab.sftpOpen && (
