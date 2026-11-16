@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { formatFileModified } from '@/lib/file-date';
 import { File, FileCog, FileQuestion, FileSymlink, FileX, Folder, FolderSymlink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SftpEntry } from '@/lib/types';
@@ -115,6 +116,9 @@ export function SftpFileRow({
       </span>
       <span className="text-muted text-right tabular-nums">
         {entry.is_dir ? '' : formatSize(entry.size)}
+      </span>
+      <span className="text-muted font-mono tabular-nums whitespace-nowrap">
+        {formatFileModified(entry.mtime_unix)}
       </span>
       <span className="text-muted font-mono">{formatMode(entry.mode)}</span>
     </div>

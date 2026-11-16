@@ -1,4 +1,5 @@
 'use client';
+import { FILE_MODIFIED_COL_W, formatFileModified } from '@/lib/file-date';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUp, ChevronDown, Copy, Folder, FolderOpen, HardDrive, Home, Loader2, RefreshCw, Star, X } from 'lucide-react';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
@@ -206,8 +207,8 @@ export function LocalFilesPane({ onClose }: { onClose: () => void }) {
       </div>
       {error && <p role="alert" className="mx-2 mb-2 p-2 text-xs break-words text-danger border border-danger/50 rounded">{error}</p>}
       <div className="min-h-0 flex-1 overflow-auto" aria-busy={busy}>
-        <table className="w-full text-xs border-collapse">
-          <thead className="sticky top-0 bg-surface2 text-muted text-left"><tr><th className="px-2 py-1 font-normal">Name</th><th className="px-2 py-1 font-normal text-right">Size</th></tr></thead>
+        <table className="w-full text-xs border-collapse" style={{ minWidth: 140 + 80 + FILE_MODIFIED_COL_W }}>
+          <thead className="sticky top-0 bg-surface2 text-muted text-left"><tr><th className="px-2 py-1 font-normal">Name</th><th className="px-2 py-1 font-normal text-right">Size</th><th className="px-2 py-1 font-normal whitespace-nowrap" style={{ minWidth: FILE_MODIFIED_COL_W }}>수정일시</th></tr></thead>
           <tbody>{entries.map((entry) => (
             <tr key={entry.path} aria-selected={selected === entry.path} className={selected === entry.path ? 'bg-accent/15' : 'hover:bg-surface2'} onContextMenu={(event) => {
               event.preventDefault();
@@ -243,6 +244,7 @@ export function LocalFilesPane({ onClose }: { onClose: () => void }) {
                 <LocalFileIcon entry={entry} /><span className="truncate">{entry.name}</span>
               </button></td>
               <td className="px-2 py-1 text-muted text-right whitespace-nowrap">{entry.is_dir ? '—' : sizeLabel(entry.size)}</td>
+              <td className="px-2 py-1 text-muted font-mono tabular-nums whitespace-nowrap">{formatFileModified(entry.modified)}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -250,7 +252,7 @@ export function LocalFilesPane({ onClose }: { onClose: () => void }) {
       </div>
       {draggingFile && <div className="pointer-events-none absolute inset-x-2 bottom-14 z-50 p-3 rounded bg-surface2 border border-accent text-xs shadow-lg">Copy {draggingFile}<br />Drop onto a local PowerShell or CMD terminal.</div>}
       <footer className="border-t border-border p-2 text-xs text-muted shrink-0 break-words" aria-live="polite">
-        {selectedEntry ? <><span className="text-fg">{selectedEntry.name}</span><br />{selectedEntry.is_dir ? 'Folder' : sizeLabel(selectedEntry.size)}{selectedEntry.modified != null && ` · ${new Date(selectedEntry.modified * 1000).toLocaleString()}`}</> : `${entries.length} items · Double-click a folder to open`}
+        {selectedEntry ? <><span className="text-fg">{selectedEntry.name}</span><br />{selectedEntry.is_dir ? 'Folder' : sizeLabel(selectedEntry.size)}{selectedEntry.modified != null && ` · ${formatFileModified(selectedEntry.modified)}`}</> : `${entries.length} items · Double-click a folder to open`}
       </footer>
       <ResizeHandle width={width} min={260} max={640} defaultWidth={360} onChange={setWidth} label="Resize local files" />
       {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} onClose={() => setContextMenu(null)} items={[
