@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FolderPlus, Inbox, Loader2, RefreshCw, Upload, UploadCloud } from 'lucide-react';
+import { ArrowUp, Inbox, Loader2, RefreshCw, Upload, UploadCloud } from 'lucide-react';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { api, errMessage } from '@/lib/tauri';
 import type { SftpEntry } from '@/lib/types';
@@ -138,6 +138,10 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
   // the new connection instead of listing against one that has no SFTP.
   const [openedOn, setOpenedOn] = useState<number | null>(null);
   const opened = openedOn !== null && openedOn === tab.connectionId;
+  const [navigatingUp, setNavigatingUp] = useState(false);
+  const navigatingUpRef = useRef(false);
+  const currentPath = tab.cwd.replace(/\/+$/, '') || '/';
+  const parentPath = currentPath.slice(0, currentPath.lastIndexOf('/')) || '/';
   const [dragOver, setDragOver] = useState(false);
   const [prompt, setPrompt] = useState<PendingPrompt | null>(null);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
@@ -244,6 +248,20 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
     }
   }
 
+  async function navigateUp() {
+    if (!opened || tab.status !== 'connected' || currentPath === '/' || navigatingUpRef.current) return;
+    navigatingUpRef.current = true;
+    setNavigatingUp(true);
+    try {
+      await navigateToAddress(parentPath);
+    } catch (e) {
+      toast.danger('폴더 이동 실패', errMessage(e));
+    } finally {
+      navigatingUpRef.current = false;
+      setNavigatingUp(false);
+    }
+  }
+
   function openContext(e: SftpEntry, x: number, y: number) {
     const cid = tab.connectionId;
     if (cid == null) return;
@@ -312,6 +330,8 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
     }
     items.push({ label: 'Rename…', onClick: () => setPrompt({ kind: 'rename', entry: e }) });
     items.push({ label: 'Delete', danger: true, onClick: () => setConfirm({ kind: 'delete', entry: e }) });
+    items.push({ separator: true });
+    items.push({ label: 'New directory…', disabled: !opened || tab.status !== 'connected', onClick: () => setPrompt({ kind: 'mkdir' }) });
     setMenu({ x, y, items });
   }
 
@@ -617,12 +637,14 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
         </div>
         <button
           type="button"
-          onClick={() => setPrompt({ kind: 'mkdir' })}
-          title="New directory"
-          aria-label="New directory"
-          className="icon-btn"
+          onClick={() => { void navigateUp(); }}
+          disabled={!opened || tab.status !== 'connected' || currentPath === '/' || navigatingUp}
+          aria-busy={navigatingUp}
+          title="상위 폴더로 이동"
+          aria-label="상위 폴더로 이동"
+          className="icon-btn shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <FolderPlus size={13} />
+          <ArrowUp size={13} />
         </button>
         <button
           type="button"
@@ -665,7 +687,21 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
         </div>
       )}
 
-      <div role="table" aria-label="Remote files" className="flex-1 overflow-auto">
+      <div
+        role="table"
+        aria-label="Remote files"
+        className="flex-1 overflow-auto"
+        onContextMenu={(event) => {
+          // File rows handle their own menu; only handle the list background here.
+          if (event.defaultPrevented) return;
+          event.preventDefault();
+          setMenu({
+            x: event.clientX,
+            y: event.clientY,
+            items: [{ label: 'New directory…', disabled: !opened || tab.status !== 'connected', onClick: () => setPrompt({ kind: 'mkdir' }) }],
+          });
+        }}
+      >
         {/* Rows are at least as wide as the columns add up to, so when the
             user drags Name wider than the pane the list scrolls sideways
             instead of truncating, and row backgrounds span the full width. */}
