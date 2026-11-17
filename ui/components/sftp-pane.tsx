@@ -1,6 +1,8 @@
 'use client';
 import { FILE_MODIFIED_COL_W } from '@/lib/file-date';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { DEFAULT_FILE_SORT, nextFileSort, sortFileEntries, type FileSortColumn } from '@/lib/file-sort';
+import { FileSortButton } from './file-sort-button';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUp, Inbox, Loader2, RefreshCw, Upload, UploadCloud } from 'lucide-react';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { api, errMessage } from '@/lib/tauri';
@@ -128,6 +130,9 @@ function sftpColumnsMinWidth(c: SftpColumns): number {
 
 export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: boolean }) {
   const [entries, setEntries] = useState<SftpEntry[]>([]);
+  const [sort, setSort] = useState(DEFAULT_FILE_SORT);
+  const onSort = (column: FileSortColumn) => setSort((current) => nextFileSort(current, column));
+  const sortedEntries = useMemo(() => sortFileEntries(entries, sort, (entry) => entry.mtime_unix), [entries, sort]);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<TrackedTransfer[]>([]);
@@ -556,11 +561,11 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
       return;
     }
     if (ev.shiftKey && anchor) {
-      const ai = entries.findIndex((e) => e.full_path === anchor);
-      const bi = entries.findIndex((e) => e.full_path === path);
+      const ai = sortedEntries.findIndex((e) => e.full_path === anchor);
+      const bi = sortedEntries.findIndex((e) => e.full_path === path);
       if (ai >= 0 && bi >= 0) {
         const [lo, hi] = ai <= bi ? [ai, bi] : [bi, ai];
-        setSelected(new Set(entries.slice(lo, hi + 1).map((e) => e.full_path)));
+        setSelected(new Set(sortedEntries.slice(lo, hi + 1).map((e) => e.full_path)));
       }
       return;
     }
@@ -715,8 +720,8 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
             style={{ gridTemplateColumns: template }}
             className="grid gap-2 px-2 py-1 text-[11px] text-muted sticky top-0 bg-surface border-b border-border uppercase tracking-wider font-medium z-10"
           >
-            <span role="columnheader" className="relative">
-              Name
+            <span role="columnheader" aria-sort={sort.column === 'name' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'} className="relative">
+              <FileSortButton column="name" sort={sort} onSort={onSort}>Name</FileSortButton>
               <ResizeHandle
                 width={columns.name}
                 min={SFTP_COL_MIN.name}
@@ -728,8 +733,8 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
                 label="Resize Name column"
               />
             </span>
-            <span role="columnheader" className="relative text-right pr-1.5">
-              Size
+            <span role="columnheader" aria-sort={sort.column === 'size' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'} className="relative text-right pr-1.5">
+              <FileSortButton column="size" sort={sort} onSort={onSort}>Size</FileSortButton>
               <ResizeHandle
                 width={columns.size}
                 min={SFTP_COL_MIN.size}
@@ -741,7 +746,7 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
                 label="Resize Size column"
               />
             </span>
-            <span role="columnheader">수정일시</span>
+            <span role="columnheader" aria-sort={sort.column === 'modified' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><FileSortButton column="modified" sort={sort} onSort={onSort}>수정일시</FileSortButton></span>
             <span role="columnheader">Mode</span>
           </div>
           {!opened && tab.sftpOpen && (
@@ -753,7 +758,7 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
           {opened && entries.length === 0 && (
             <EmptyState icon={Inbox} title="Empty directory" compact />
           )}
-          {entries.map((e) => (
+          {sortedEntries.map((e) => (
             <SftpFileRow
               key={e.full_path}
               entry={e}

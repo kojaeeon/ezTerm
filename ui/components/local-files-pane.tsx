@@ -1,6 +1,6 @@
 'use client';
 import { FILE_MODIFIED_COL_W, formatFileModified } from '@/lib/file-date';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUp, ChevronDown, Copy, Folder, FolderOpen, HardDrive, Home, Loader2, RefreshCw, Star, X } from 'lucide-react';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -14,6 +14,9 @@ import { PromptDialog } from './prompt-dialog';
 import { LocalFileIcon } from './local-file-icon';
 import { FILE_BROWSER_PREFS_KEY, folderKey, readFileBrowserPrefs, type FileBrowserPrefs, type FavoriteFolder } from '@/lib/file-browser-prefs';
 
+import { DEFAULT_FILE_SORT, nextFileSort, sortFileEntries, type FileSortColumn } from '@/lib/file-sort';
+import { FileSortButton } from './file-sort-button';
+
 const PATH_KEY = 'ezterm.localFilesPath';
 
 function sizeLabel(size: number): string {
@@ -24,6 +27,8 @@ function sizeLabel(size: number): string {
 }
 
 export function LocalFilesPane({ onClose }: { onClose: () => void }) {
+  const [sort, setSort] = useState(DEFAULT_FILE_SORT);
+  const onSort = (column: FileSortColumn) => setSort((current) => nextFileSort(current, column));
   const [listing, setListing] = useState<LocalListing | null>(null);
   const [address, setAddress] = useState('');
   const [roots, setRoots] = useState<string[]>([]);
@@ -148,8 +153,9 @@ export function LocalFilesPane({ onClose }: { onClose: () => void }) {
     try { await writeText(path); } catch (e) { setError(errMessage(e)); }
   }
 
-  const entries = listing?.entries.filter((entry) => (hidden || !entry.hidden)
-    && entry.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())) ?? [];
+  const entries = useMemo(() => sortFileEntries(listing?.entries.filter((entry) => (hidden || !entry.hidden)
+    && entry.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())) ?? [], sort, (entry) => entry.modified),
+  [listing, hidden, filter, sort]);
   const selectedEntry = listing?.entries.find((entry) => entry.path === selected);
 
   return (
@@ -208,7 +214,11 @@ export function LocalFilesPane({ onClose }: { onClose: () => void }) {
       {error && <p role="alert" className="mx-2 mb-2 p-2 text-xs break-words text-danger border border-danger/50 rounded">{error}</p>}
       <div className="min-h-0 flex-1 overflow-auto" aria-busy={busy}>
         <table className="w-full text-xs border-collapse" style={{ minWidth: 140 + 80 + FILE_MODIFIED_COL_W }}>
-          <thead className="sticky top-0 bg-surface2 text-muted text-left"><tr><th className="px-2 py-1 font-normal">Name</th><th className="px-2 py-1 font-normal text-right">Size</th><th className="px-2 py-1 font-normal whitespace-nowrap" style={{ minWidth: FILE_MODIFIED_COL_W }}>수정일시</th></tr></thead>
+          <thead className="sticky top-0 bg-surface2 text-muted text-left"><tr>
+            <th aria-sort={sort.column === 'name' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-2 py-1 font-normal"><FileSortButton column="name" sort={sort} onSort={onSort}>Name</FileSortButton></th>
+            <th aria-sort={sort.column === 'size' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-2 py-1 font-normal"><FileSortButton column="size" sort={sort} onSort={onSort}>Size</FileSortButton></th>
+            <th aria-sort={sort.column === 'modified' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'} className="px-2 py-1 font-normal whitespace-nowrap" style={{ minWidth: FILE_MODIFIED_COL_W }}><FileSortButton column="modified" sort={sort} onSort={onSort}>수정일시</FileSortButton></th>
+          </tr></thead>
           <tbody>{entries.map((entry) => (
             <tr key={entry.path} aria-selected={selected === entry.path} className={selected === entry.path ? 'bg-accent/15' : 'hover:bg-surface2'} onContextMenu={(event) => {
               event.preventDefault();
