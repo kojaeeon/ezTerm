@@ -4,6 +4,7 @@ import { DEFAULT_FILE_SORT, nextFileSort, sortFileEntries, type FileSortColumn }
 import { FileSortButton } from './file-sort-button';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUp, Inbox, Loader2, RefreshCw, Upload, UploadCloud } from 'lucide-react';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { api, errMessage } from '@/lib/tauri';
 import type { SftpEntry } from '@/lib/types';
@@ -157,6 +158,7 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
   // values that are currently selected. `anchor` is the last
   // plain-clicked row, used as the start of a shift+click range.
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const fileListRef = useRef<HTMLDivElement>(null);
   const [anchor, setAnchor] = useState<string | null>(null);
   const nextDirJobId = useRef(1);
   const setCwd = useTabs((s) => s.setCwd);
@@ -268,10 +270,46 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
     }
   }
 
+  async function copyAbsolutePaths(paths: string[]) {
+    if (paths.length === 0) return;
+    try {
+      await writeText(paths.join('\n'));
+      toast.success('절대경로 복사 완료', paths.length === 1 ? paths[0] : `${paths.length}개 경로`);
+    } catch (error) {
+      toast.danger('절대경로 복사 실패', errMessage(error));
+    }
+  }
+
+  function handleCopyPathKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!isVisible || prompt || confirm || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey
+      || event.key.toLowerCase() !== 'c') return;
+    const target = event.target as HTMLElement;
+    if (target.closest('input, textarea, [contenteditable="true"]')) return;
+    if (!fileListRef.current?.contains(target) && !target.closest('[role="menu"]')) return;
+    const paths = sortedEntries.filter((entry) => selected.has(entry.full_path)).map((entry) => entry.full_path);
+    if (paths.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setMenu(null);
+    void copyAbsolutePaths(paths);
+  }
+
   function openContext(e: SftpEntry, x: number, y: number) {
     const cid = tab.connectionId;
     if (cid == null) return;
-    const items: MenuItem[] = [];
+    // Right-clicking an unselected row makes it the shortcut target too.
+    const paths = selected.has(e.full_path)
+      ? sortedEntries.filter((entry) => selected.has(entry.full_path)).map((entry) => entry.full_path)
+      : [e.full_path];
+    if (!selected.has(e.full_path)) {
+      setSelected(new Set([e.full_path]));
+      setAnchor(e.full_path);
+    }
+    const items: MenuItem[] = [{
+      label: '절대경로 복사',
+      shortcut: 'Ctrl+Shift+C',
+      onClick: () => { void copyAbsolutePaths(paths); },
+    }, { separator: true }];
     // If the right-clicked file is part of an active multi-selection,
     // Download applies to every selected non-directory entry and prompts
     // once for a destination folder. Otherwise it falls back to the
@@ -635,6 +673,7 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
           setDragOver(false);
         }
       }}
+      onKeyDownCapture={handleCopyPathKeyDown}
       onDrop={handleDrop}
     >
       <div className="h-8 px-1.5 border-b border-border flex items-center gap-1 shrink-0">
@@ -694,7 +733,10 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
       )}
 
       <div
+        ref={fileListRef}
         role="table"
+        tabIndex={0}
+        onMouseDownCapture={() => fileListRef.current?.focus({ preventScroll: true })}
         aria-label="Remote files"
         className="flex-1 overflow-auto"
         onContextMenu={(event) => {
