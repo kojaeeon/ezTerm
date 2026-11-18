@@ -9,11 +9,13 @@ import { api, errMessage } from '@/lib/tauri';
 import { toast } from '@/lib/toast';
 import { createTerminal, type TerminalBundle } from '@/lib/xterm';
 
-export function EzEdit({ connectionId, visible, onClose }: {
+export function EzEdit({ connectionId, localCwd, visible, onClose }: {
   connectionId: number;
+  localCwd?: string | null;
   visible: boolean;
   onClose: () => void;
 }) {
+  const isLocal = localCwd !== undefined;
   const [command, setCommand] = useState('ezedit ');
   const [path, setPath] = useState('');
   const [error, setError] = useState('');
@@ -96,7 +98,11 @@ export function EzEdit({ connectionId, visible, onClose }: {
         bundleRef.current = null;
       };
 
-      void api.ezedit(connectionId, path, [terminal.cols, terminal.rows], processReady, output.channel)
+      const size: [number, number] = [terminal.cols, terminal.rows];
+      const editing = localCwd === undefined
+        ? api.ezedit(connectionId, path, size, processReady, output.channel)
+        : api.ezeditLocal(connectionId, path, localCwd, size, processReady, output.channel);
+      void editing
         .then((saved) => {
           if (saved) toast.success('Remote file saved', path);
           if (active) onCloseRef.current();
@@ -118,17 +124,27 @@ export function EzEdit({ connectionId, visible, onClose }: {
       if (editorId !== null) void api.localDisconnect(editorId).catch(() => {});
       cleanup?.();
     };
-  }, [connectionId, path]);
+  }, [connectionId, localCwd, path]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    const match = /^ezedit[ \t]+(\/[^\r\n]*)$/.exec(command.trimStart());
-    if (!match) {
-      setError('Enter ezedit followed by an absolute path, for example ezedit /app/config.yml.');
+    const match = /^ezedit[ \t]+([^\r\n]+)$/.exec(command.trimStart());
+    let file = match?.[1] ?? '';
+    if (isLocal) {
+      file = file.trim();
+      if (file.length >= 2 && ((file.startsWith('"') && file.endsWith('"'))
+          || (file.startsWith("'") && file.endsWith("'")))) {
+        file = file.slice(1, -1);
+      }
+    }
+    if (!file || (!isLocal && !file.startsWith('/'))) {
+      setError(isLocal
+        ? 'Enter ezedit followed by a local file path.'
+        : 'Enter ezedit followed by an absolute path, for example ezedit /app/config.yml.');
       return;
     }
     setError('');
-    setPath(match[1]);
+    setPath(file);
   }
 
   return (
@@ -139,7 +155,7 @@ export function EzEdit({ connectionId, visible, onClose }: {
     >
       {!path ? (
         <form onSubmit={submit} className="w-[34rem] max-w-[94%] rounded border border-border bg-surface p-4 shadow-dialog">
-          <label className="block text-sm font-medium" htmlFor={`ezedit-${connectionId}`}>Edit a remote file</label>
+          <label className="block text-sm font-medium" htmlFor={`ezedit-${connectionId}`}>{isLocal ? 'Edit a local file' : 'Edit a remote file'}</label>
           <input
             ref={input}
             id={`ezedit-${connectionId}`}
@@ -161,7 +177,7 @@ export function EzEdit({ connectionId, visible, onClose }: {
         <div className="flex h-full w-full flex-col bg-bg">
           <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-1 text-xs">
             <span className="min-w-0 truncate font-mono" title={path}>Helix · {path}</span>
-            <span className="shrink-0 text-muted">{ready ? ':wq to save and close · :q! to discard unsaved edits' : 'Opening remote file…'}</span>
+            <span className="shrink-0 text-muted">{ready ? ':wq to save and close · :q! to discard unsaved edits' : 'Opening file…'}</span>
           </div>
           <div ref={mount} className="min-h-0 flex-1 p-1" />
         </div>

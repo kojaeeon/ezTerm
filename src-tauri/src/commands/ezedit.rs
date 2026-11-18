@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use portable_pty::CommandBuilder;
 use russh_sftp::{
@@ -85,20 +85,8 @@ pub async fn ezedit(
     // Keep language servers off for snapshots downloaded from remote hosts.
     let config = working.path().join("editor-config.toml");
     fs::write(&config, "[editor.lsp]\nenable = false\n").await?;
-    let mut cmd = CommandBuilder::new(helix.join(helix_binary()));
-    cmd.arg("--config");
-    cmd.arg(&config);
-    cmd.arg(&local_file);
-    cmd.cwd(working.path());
-    cmd.env("TERM", "xterm-256color");
-    cmd.env("HELIX_RUNTIME", helix.join("runtime"));
-
-    let (editor_id, done) = spawn_editor(&state, app, cmd, size, output).await?;
-    if ready.send(editor_id).is_err() {
-        state.local.close(editor_id).await;
-    }
-    let exit = done.await;
-    state.local.close(editor_id).await;
+    let cmd = helix_command(&helix, &local_file, working.path(), Some(&config));
+    let exit = run_helix(&state, app, cmd, size, ready, output).await?;
 
     let result = async {
         let mut edited = Vec::new();
@@ -107,11 +95,7 @@ pub async fn ezedit(
             .take((MAX_BYTES + 1) as u64)
             .read_to_end(&mut edited)
             .await?;
-        if !matches!(exit, Ok(Ok(status)) if status.success()) {
-            return Err(AppError::Validation(
-                "Helix did not exit successfully".into(),
-            ));
-        }
+        check_helix_exit(exit)?;
         if edited == original {
             return Ok(false);
         }
@@ -137,6 +121,125 @@ pub async fn ezedit(
                 recovered.display()
             )))
         }
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct LocalEditFile {
+    path: PathBuf,
+    cwd: Option<PathBuf>,
+}
+
+#[tauri::command]
+pub async fn ezedit_local(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    connection_id: u64,
+    file: LocalEditFile,
+    size: (u16, u16),
+    ready: Channel<u64>,
+    output: Channel<InvokeResponseBody>,
+) -> Result<()> {
+    require_unlocked(&state).await?;
+    let shell = state
+        .local
+        .get(connection_id)
+        .await
+        .ok_or(AppError::NotFound)?;
+    if shell.wsl_meta.is_some() {
+        return Err(AppError::Validation(
+            "ezedit requires a local shell tab".into(),
+        ));
+    }
+    let document = resolve_local_path(&file.path, file.cwd.as_deref())?;
+    let directory = document
+        .parent()
+        .ok_or_else(|| AppError::Validation("Enter a local file path".into()))?;
+    match fs::metadata(&document).await {
+        Ok(metadata) if metadata.is_file() => {}
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                && fs::metadata(directory).await?.is_dir() => {}
+        Err(error) => return Err(error.into()),
+        Ok(_) => {
+            return Err(AppError::Validation(
+                "ezedit requires a regular file".into(),
+            ));
+        }
+    }
+    let helix = helix_directory(&app)?;
+    let cmd = helix_command(&helix, &document, directory, None);
+    let exit = run_helix(&state, app, cmd, size, ready, output).await?;
+    check_helix_exit(exit)
+}
+
+fn resolve_local_path(path: &Path, cwd: Option<&Path>) -> Result<PathBuf> {
+    if path.file_name().is_none() {
+        return Err(AppError::Validation("Enter a local file path".into()));
+    }
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    // Drive-relative paths such as D:file use a per-drive working directory
+    // that the shell prompt does not report.
+    if matches!(
+        path.components().next(),
+        Some(std::path::Component::Prefix(_))
+    ) {
+        return Err(AppError::Validation(
+            "Enter an absolute path for a drive-qualified filename".into(),
+        ));
+    }
+    let cwd = cwd.filter(|dir| dir.is_absolute()).ok_or_else(|| {
+        AppError::Validation(
+            "The shell has not reported its current folder. Enter an absolute path or wait for the next prompt.".into(),
+        )
+    })?;
+    Ok(cwd.join(path))
+}
+
+fn helix_command(
+    helix: &Path,
+    document: &Path,
+    directory: &Path,
+    config: Option<&Path>,
+) -> CommandBuilder {
+    let mut cmd = CommandBuilder::new(helix.join(helix_binary()));
+    if let Some(config) = config {
+        cmd.arg("--config");
+        cmd.arg(config);
+    }
+    cmd.arg(document);
+    cmd.cwd(directory);
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("HELIX_RUNTIME", helix.join("runtime"));
+    cmd
+}
+
+async fn run_helix(
+    state: &AppState,
+    app: AppHandle,
+    cmd: CommandBuilder,
+    size: (u16, u16),
+    ready: Channel<u64>,
+    output: Channel<InvokeResponseBody>,
+) -> Result<bool> {
+    let (editor_id, done) = spawn_editor(state, app, cmd, size, output).await?;
+    if ready.send(editor_id).is_err() {
+        state.local.close(editor_id).await;
+    }
+    let exit = done.await;
+    state.local.close(editor_id).await;
+    Ok(matches!(exit, Ok(Ok(status)) if status.success()))
+}
+
+fn check_helix_exit(success: bool) -> Result<()> {
+    if success {
+        Ok(())
+    } else {
+        Err(AppError::Validation(
+            "Helix did not exit successfully".into(),
+        ))
     }
 }
 
@@ -338,6 +441,42 @@ async fn save_remote(
         let _ = sftp.remove(&staging).await;
     }
     result
+}
+
+#[cfg(test)]
+mod local_path_tests {
+    use super::*;
+
+    #[test]
+    fn local_paths_use_the_shell_directory_only_when_needed() {
+        let cwd = tempfile::tempdir().unwrap();
+        let relative = Path::new("folder with spaces").join("README.md");
+        let absolute = cwd.path().join(&relative);
+        assert_eq!(
+            resolve_local_path(&relative, Some(cwd.path())).unwrap(),
+            absolute
+        );
+        assert_eq!(resolve_local_path(&absolute, None).unwrap(), absolute);
+        assert!(resolve_local_path(&relative, None).is_err());
+        assert!(resolve_local_path(Path::new("."), Some(cwd.path())).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn local_paths_handle_windows_drive_and_unc_paths() {
+        let cwd = Path::new(r"C:\work\dashboard");
+        let unc = Path::new(r"\\server\share\readme.md");
+        assert_eq!(
+            resolve_local_path(Path::new(r".\docs\readme.md"), Some(cwd)).unwrap(),
+            cwd.join(r".\docs\readme.md")
+        );
+        assert_eq!(
+            resolve_local_path(Path::new(r"\file.txt"), Some(cwd)).unwrap(),
+            Path::new(r"C:\file.txt")
+        );
+        assert_eq!(resolve_local_path(unc, None).unwrap(), unc);
+        assert!(resolve_local_path(Path::new(r"D:readme.md"), Some(cwd)).is_err());
+    }
 }
 
 #[cfg(all(test, unix))]

@@ -22,7 +22,7 @@ on those platforms.
 
 **Licence:** GNU General Public License, version 3 — see [LICENSE](LICENSE).
 
-## Edit a remote file with Helix
+## Edit a file with Helix
 
 In a connected SSH tab, press **Ctrl+Shift+E** or choose **ezedit…** from
 the terminal's right-click menu. Enter `ezedit /absolute/path/to/file`
@@ -38,6 +38,11 @@ with the OpenSSH SFTP atomic rename extension. Keep the `helix` directory
 beside the executable when using a portable build. To stage it for a local
 build, run `python scripts/stage-helix.py windows-x86_64` (substitute your
 platform). The server does not need Helix installed.
+
+In a local CMD or PowerShell tab, use the same shortcut or menu and enter
+`ezedit .\README.md` or `ezedit "C:\work\my project\README.md"`.
+Relative paths use the current folder reported by the shell. Helix opens
+the local file directly, so `:w` writes it immediately and `:wq` saves and closes.
 
 ## Features
 

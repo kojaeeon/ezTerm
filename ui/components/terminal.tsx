@@ -171,7 +171,10 @@ export function TerminalView({ tab, visible }: Props) {
     bellTimer.current = window.setTimeout(() => setBellFlash(false), 120);
   }
   const [find, setFind] = useState(false);
-  const [editConnection, setEditConnection] = useState<number | null>(null);
+  const [editTarget, setEditTarget] = useState<{
+    connectionId: number;
+    localCwd?: string | null;
+  } | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [authFix, setAuthFix] = useState(false);
   const [xserverMissing, setXserverMissing] = useState(false);
@@ -210,7 +213,15 @@ export function TerminalView({ tab, visible }: Props) {
   useEffect(() => { liveFontSizeRef.current = liveFontSize; }, [liveFontSize]);
   // Pick the command family by session kind. Ref so event listeners set up
   // in empty-deps effects (wheel, paste) always see the latest dispatch.
-  const isLocal = tab.session.session_kind === 'wsl' || tab.session.session_kind === 'local';
+  const isLocalShell = tab.session.session_kind === 'local';
+  const supportsEzEdit = tab.session.session_kind !== 'wsl';
+  const isLocal = tab.session.session_kind === 'wsl' || isLocalShell;
+  function openEzEdit() {
+    const connectionId = connectionIdRef.current;
+    if (connectionId === null) return false;
+    setEditTarget({ connectionId, localCwd: isLocalShell ? localCwdRef.current : undefined });
+    return true;
+  }
   const termApiRef = useRef({
     write:      isLocal ? api.localWrite      : api.sshWrite,
     resize:     isLocal ? api.localResize     : api.sshResize,
@@ -576,15 +587,13 @@ export function TerminalView({ tab, visible }: Props) {
         else if (mode === 'visual') flashBell();
       },
     });
-    if (!isLocal) {
+    if (supportsEzEdit) {
       bundle.terminal.attachCustomKeyEventHandler((event) => {
         if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey
             || event.altKey || event.metaKey || event.code !== 'KeyE') return true;
-        const id = connectionIdRef.current;
-        if (id === null) return true;
+        if (!openEzEdit()) return true;
         event.preventDefault();
         event.stopPropagation();
-        setEditConnection(id);
         return false;
       });
     }
@@ -683,11 +692,11 @@ export function TerminalView({ tab, visible }: Props) {
       const b = bundleRef.current;
       if (!b) return;
       safeFit(b);
-      const blocked = prompt || authFix || xserverMissing || find || fontPicker || editConnection !== null;
+      const blocked = prompt || authFix || xserverMissing || find || fontPicker || editTarget !== null;
       if (!blocked && tab.status === 'connected') b.terminal.focus();
     }, 0);
     return () => window.clearTimeout(id);
-  }, [visible, prompt, authFix, xserverMissing, find, fontPicker, editConnection, tab.status]);
+  }, [visible, prompt, authFix, xserverMissing, find, fontPicker, editTarget, tab.status]);
 
   // Ctrl + mouse wheel → zoom font size (MobaXterm convention).
   //
@@ -929,12 +938,13 @@ export function TerminalView({ tab, visible }: Props) {
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
-      <div ref={containerRef} className="h-full w-full p-1" inert={editConnection !== null} />
-      {editConnection !== null && (
+      <div ref={containerRef} className="h-full w-full p-1" inert={editTarget !== null} />
+      {editTarget !== null && (
         <EzEdit
-          connectionId={editConnection}
+          connectionId={editTarget.connectionId}
+          localCwd={editTarget.localCwd}
           visible={visible}
-          onClose={() => setEditConnection(null)}
+          onClose={() => setEditTarget(null)}
         />
       )}
       <div className="pointer-events-none absolute inset-0 z-40 hidden group-data-[local-copy-hover=true]:flex items-center justify-center bg-bg/70">
@@ -1020,9 +1030,9 @@ export function TerminalView({ tab, visible }: Props) {
           onFind={() => { setFind(true); setMenu(null); }}
           onSaveLog={() => { void doSaveLog(); }}
           onFont={() => { setFontPicker(true); setMenu(null); }}
-          onEzEdit={!isLocal && tab.status === 'connected' && tab.connectionId != null ? () => {
+          onEzEdit={supportsEzEdit && tab.status === 'connected' && tab.connectionId != null ? () => {
             setMenu(null);
-            setEditConnection(connectionIdRef.current);
+            openEzEdit();
           } : undefined}
           canOpenExplorer={!!localCwd && tab.status === 'connected'}
           onOpenExplorer={tab.session.session_kind === 'local' ? () => {

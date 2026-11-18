@@ -152,9 +152,12 @@ export const api = {
   knownHostList:   () => invoke<KnownHost[]>('known_host_list'),
   knownHostRemove: (host: string, port: number) => invoke<void>('known_host_remove', { host, port }),
 
-  // SFTP
   ezedit: (connectionId: number, path: string, size: [number, number], ready: Channel<number>, output: Channel<ArrayBuffer>) =>
     invoke<boolean>('ezedit', { connectionId, path, size, ready, output }),
+  ezeditLocal: (connectionId: number, path: string, cwd: string | null, size: [number, number], ready: Channel<number>, output: Channel<ArrayBuffer>) =>
+    invoke<void>('ezedit_local', { connectionId, file: { path, cwd }, size, ready, output }),
+
+  // SFTP
   sftpOpen:     (connectionId: number) => invoke<void>('sftp_open', { connectionId }),
   sftpList:     (connectionId: number, path: string) =>
     invoke<SftpEntry[]>('sftp_list', { connectionId, path }),

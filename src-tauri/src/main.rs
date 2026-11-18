@@ -96,6 +96,7 @@ async fn main() {
             commands::ssh::known_host_list,
             commands::ssh::known_host_remove,
             commands::ezedit::ezedit,
+            commands::ezedit::ezedit_local,
             commands::sftp::sftp_open,
             commands::sftp::sftp_list,
             commands::sftp::sftp_mkdir,
