@@ -22,6 +22,23 @@ on those platforms.
 
 **Licence:** GNU General Public License, version 3 — see [LICENSE](LICENSE).
 
+## Edit a remote file with Helix
+
+In a connected SSH tab, press **Ctrl+Shift+E** or choose **ezedit…** from
+the terminal's right-click menu. Enter `ezedit /absolute/path/to/file`
+in the ezTerm command prompt. Paths with spaces can be entered as-is.
+
+Helix opens in the same tab using the bundled local editor. Use
+`:wq` to save and exit. ezTerm uploads changes after Helix closes. If the
+remote file changed during editing or upload fails, ezTerm displays the
+location of the preserved local copy.
+
+This feature supports existing UTF-8 files up to 4 MiB on SSH servers
+with the OpenSSH SFTP atomic rename extension. Keep the `helix` directory
+beside the executable when using a portable build. To stage it for a local
+build, run `python scripts/stage-helix.py windows-x86_64` (substitute your
+platform). The server does not need Helix installed.
+
 ## Features
 
 ### Connections

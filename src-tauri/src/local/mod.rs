@@ -9,7 +9,7 @@
 //! `local_disconnect` commands route through the per-connection mpsc to a
 //! writer thread that owns the `MasterPty`.
 //!
-//! The child process is not explicitly waited on — dropping the stdin
+//! For local shells, the child process is not explicitly waited on — dropping the stdin
 //! sender closes the mpsc, the writer thread exits, the master drops,
 //! ConPTY kills the child, and the reader thread observes EOF and emits
 //! the close event.
@@ -19,4 +19,5 @@ pub mod shells;
 mod spawn;
 
 pub use registry::{Connection, LocalInput, LocalRegistry, WslMeta};
+pub(crate) use spawn::spawn_editor;
 pub use spawn::spawn_from_session;

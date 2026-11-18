@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/windows-exe.yml'
+      - 'scripts/stage-helix.py'
       - 'ui/**'
       - 'src-tauri/**'
       - 'migrations/**'
@@ -50,6 +51,9 @@ jobs:
       - name: Install UI dependencies
         run: npm --prefix ui ci
 
+      - name: Stage Helix
+        run: python scripts/stage-helix.py windows-x86_64
+
       - name: Build standalone EXE
         shell: pwsh
         run: |
@@ -62,10 +66,17 @@ jobs:
             throw 'ezterm.exe was not produced'
           }
 
-      - name: Upload EXE
+      - name: Stage portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path stage/windows-portable | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/ezterm.exe stage/windows-portable/
+          Copy-Item src-tauri/helix stage/windows-portable/helix -Recurse
+
+      - name: Upload portable package
         uses: actions/upload-artifact@v6
         with:
           name: ezTerm-windows-x64-exe
-          path: target/x86_64-pc-windows-msvc/release/ezterm.exe
+          path: stage/windows-portable/
           if-no-files-found: error
           retention-days: 14

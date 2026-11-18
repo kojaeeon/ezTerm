@@ -11,6 +11,7 @@ import { createTerminal, type TerminalBundle } from '@/lib/xterm';
 import { createOutputChannel, startOutputWatchdog, subscribeSshEvents, type OutputChannel } from '@/lib/ssh';
 import { useTabs, type Tab } from '@/lib/tabs-store';
 import { TerminalContextMenu } from './terminal-context-menu';
+import { EzEdit } from './ezedit';
 import { FindOverlay } from './find-overlay';
 import { FontPickerPopover } from './font-picker-popover';
 import { HostKeyDialog } from './host-key-dialog';
@@ -170,6 +171,7 @@ export function TerminalView({ tab, visible }: Props) {
     bellTimer.current = window.setTimeout(() => setBellFlash(false), 120);
   }
   const [find, setFind] = useState(false);
+  const [editConnection, setEditConnection] = useState<number | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [authFix, setAuthFix] = useState(false);
   const [xserverMissing, setXserverMissing] = useState(false);
@@ -574,6 +576,18 @@ export function TerminalView({ tab, visible }: Props) {
         else if (mode === 'visual') flashBell();
       },
     });
+    if (!isLocal) {
+      bundle.terminal.attachCustomKeyEventHandler((event) => {
+        if (event.type !== 'keydown' || !event.ctrlKey || !event.shiftKey
+            || event.altKey || event.metaKey || event.code !== 'KeyE') return true;
+        const id = connectionIdRef.current;
+        if (id === null) return true;
+        event.preventDefault();
+        event.stopPropagation();
+        setEditConnection(id);
+        return false;
+      });
+    }
     if (tab.session.session_kind === 'local') {
       bundle.terminal.parser.registerOscHandler(777, (value) => {
         if (!value.startsWith('ezterm-cwd;')) return false;
@@ -669,11 +683,11 @@ export function TerminalView({ tab, visible }: Props) {
       const b = bundleRef.current;
       if (!b) return;
       safeFit(b);
-      const blocked = prompt || authFix || xserverMissing || find || fontPicker;
+      const blocked = prompt || authFix || xserverMissing || find || fontPicker || editConnection !== null;
       if (!blocked && tab.status === 'connected') b.terminal.focus();
     }, 0);
     return () => window.clearTimeout(id);
-  }, [visible, prompt, authFix, xserverMissing, find, fontPicker, tab.status]);
+  }, [visible, prompt, authFix, xserverMissing, find, fontPicker, editConnection, tab.status]);
 
   // Ctrl + mouse wheel → zoom font size (MobaXterm convention).
   //
@@ -915,7 +929,14 @@ export function TerminalView({ tab, visible }: Props) {
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
-      <div ref={containerRef} className="h-full w-full p-1" />
+      <div ref={containerRef} className="h-full w-full p-1" inert={editConnection !== null} />
+      {editConnection !== null && (
+        <EzEdit
+          connectionId={editConnection}
+          visible={visible}
+          onClose={() => setEditConnection(null)}
+        />
+      )}
       <div className="pointer-events-none absolute inset-0 z-40 hidden group-data-[local-copy-hover=true]:flex items-center justify-center bg-bg/70">
         <div className="max-w-[90%] p-4 border border-accent rounded bg-surface text-fg text-sm break-words">
           {localCwd ? <>Copy file to:<br /><span className="font-mono">{localCwd}</span></> : 'Waiting for the shell to report its folder…'}
@@ -999,6 +1020,10 @@ export function TerminalView({ tab, visible }: Props) {
           onFind={() => { setFind(true); setMenu(null); }}
           onSaveLog={() => { void doSaveLog(); }}
           onFont={() => { setFontPicker(true); setMenu(null); }}
+          onEzEdit={!isLocal && tab.status === 'connected' && tab.connectionId != null ? () => {
+            setMenu(null);
+            setEditConnection(connectionIdRef.current);
+          } : undefined}
           canOpenExplorer={!!localCwd && tab.status === 'connected'}
           onOpenExplorer={tab.session.session_kind === 'local' ? () => {
             setMenu(null);

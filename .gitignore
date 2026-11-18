@@ -20,6 +20,10 @@ src-tauri/*.exe
 src-tauri/vcxsrv/*
 !src-tauri/vcxsrv/.gitkeep
 
+# Bundled Helix binary and runtime are staged from a pinned release.
+src-tauri/helix/*
+!src-tauri/helix/.gitkeep
+
 # ---------- Node / Next.js ----------
 node_modules/
 .next/

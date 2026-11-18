@@ -1,5 +1,6 @@
 pub mod backup;
 pub mod credentials;
+pub mod ezedit;
 pub mod files;
 pub mod folders;
 pub mod forwards;

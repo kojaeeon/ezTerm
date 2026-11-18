@@ -787,24 +787,9 @@ mod link_tests {
 mod sftp_server_tests {
     use super::list_sftp_dir;
 
-    fn sftp_server() -> Option<String> {
-        if let Ok(p) = std::env::var("EZTERM_SFTP_SERVER") {
-            return Some(p);
-        }
-        [
-            "/usr/lib/openssh/sftp-server",
-            "/usr/libexec/openssh/sftp-server",
-            "/usr/libexec/sftp-server",
-            "/usr/lib/ssh/sftp-server",
-        ]
-        .into_iter()
-        .find(|p| std::path::Path::new(p).exists())
-        .map(str::to_string)
-    }
-
     #[tokio::test]
     async fn lists_and_resolves_symlinks_over_real_sftp() {
-        let Some(bin) = sftp_server() else {
+        let Some(bin) = crate::sftp::test_server() else {
             // CI installs openssh-sftp-server; a missing binary there must
             // fail loudly rather than pass without testing anything.
             assert!(

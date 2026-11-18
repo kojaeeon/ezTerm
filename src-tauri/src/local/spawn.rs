@@ -5,11 +5,12 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
+use std::time::Duration;
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use super::{Connection, LocalInput, WslMeta};
 use crate::error::{AppError, Result};
@@ -33,6 +34,8 @@ pub struct SpawnRequest {
     pub rows: u16,
 }
 
+type EditorExit = std::io::Result<portable_pty::ExitStatus>;
+
 pub struct SpawnOutcome {
     pub connection_id: u64,
 }
@@ -49,7 +52,6 @@ pub async fn spawn(
         &req.extra,
         req.starting_dir.as_deref(),
     )?;
-    let id = state.local.alloc_id();
     // For WSL tabs, capture distro + user so the file browser can resolve
     // `\\wsl.localhost\<distro>\` paths and run `wsl.exe -d <distro> -u
     // <user>` for POSIX-aware ops (ls/chmod/realpath). Empty `program`
@@ -69,23 +71,48 @@ pub async fn spawn(
         None
     };
 
+    spawn_command(
+        state,
+        app,
+        cmd,
+        (req.cols, req.rows),
+        output,
+        wsl_meta,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn spawn_editor(
+    state: &AppState,
+    app: AppHandle,
+    cmd: CommandBuilder,
+    size: (u16, u16),
+    output: Channel<InvokeResponseBody>,
+) -> Result<(u64, oneshot::Receiver<EditorExit>)> {
+    let (done, exit) = oneshot::channel();
+    let outcome = spawn_command(state, app, cmd, size, output, None, Some(done)).await?;
+    Ok((outcome.connection_id, exit))
+}
+
+async fn spawn_command(
+    state: &AppState,
+    app: AppHandle,
+    cmd: CommandBuilder,
+    (cols, rows): (u16, u16),
+    output: Channel<InvokeResponseBody>,
+    wsl_meta: Option<WslMeta>,
+    done: Option<oneshot::Sender<EditorExit>>,
+) -> Result<SpawnOutcome> {
+    let id = state.local.alloc_id();
     let pair = native_pty_system()
         .openpty(PtySize {
-            rows: req.rows,
-            cols: req.cols,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         })
         .map_err(|e| AppError::Ssh(format!("pty open: {e}")))?;
-
-    let _child = pair
-        .slave
-        .spawn_command(cmd)
-        .map_err(|e| AppError::Ssh(format!("spawn: {e}")))?;
-    // Releasing the slave lets ConPTY signal EOF on the reader when the
-    // child exits. We don't retain the child handle: dropping the master
-    // (via writer-thread exit) terminates the child on Windows anyway.
-    drop(pair.slave);
 
     let mut reader = pair
         .master
@@ -95,6 +122,34 @@ pub async fn spawn(
         .master
         .take_writer()
         .map_err(|e| AppError::Ssh(format!("writer: {e}")))?;
+    let mut child = pair
+        .slave
+        .spawn_command(cmd)
+        .map_err(|e| AppError::Ssh(format!("spawn: {e}")))?;
+    drop(pair.slave);
+    let cancel_editor = done.map(|done| {
+        let (cancel, cancelled) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            // Own the process handle in one thread so cancellation never
+            // signals an already-reaped process.
+            let exit = loop {
+                match child.try_wait() {
+                    Ok(None) => {}
+                    Ok(Some(status)) => break Ok(status),
+                    Err(error) => break Err(error),
+                }
+                if !matches!(
+                    cancelled.recv_timeout(Duration::from_millis(50)),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    let _ = child.kill();
+                    break child.wait();
+                }
+            };
+            let _ = done.send(exit);
+        });
+        cancel
+    });
     let master = pair.master;
 
     // Reader: bytes → the frontend's IPC `output` channel (raw bytes, no
@@ -144,6 +199,9 @@ pub async fn spawn(
                 }
                 LocalInput::Close => break,
             }
+        }
+        if let Some(cancel) = cancel_editor {
+            let _ = cancel.send(());
         }
         // Drop order: writer → master → ConPTY handles → child terminates.
         drop(writer);

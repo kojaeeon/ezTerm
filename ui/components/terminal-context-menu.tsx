@@ -11,6 +11,7 @@ export interface TerminalMenuProps {
   onFind:       () => void;
   onSaveLog:    () => void;
   onFont:       () => void;
+  onEzEdit?:    () => void;
   /** Available for local shells; disabled until the shell reports its folder. */
   onOpenExplorer?: () => void;
   canOpenExplorer?: boolean;
@@ -30,6 +31,9 @@ export function TerminalContextMenu(p: TerminalMenuProps) {
     { label: 'Font…',            shortcut: 'Ctrl+Wheel',   onClick: p.onFont },
     { label: 'Clear scrollback', onClick: p.onClear },
   ];
+  if (p.onEzEdit) {
+    items.push({ separator: true }, { label: 'ezedit…', shortcut: 'Ctrl+Shift+E', onClick: p.onEzEdit });
+  }
   if (p.onOpenExplorer) {
     items.push(
       { separator: true },

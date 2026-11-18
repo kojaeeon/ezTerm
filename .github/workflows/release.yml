@@ -171,6 +171,9 @@ jobs:
           Copy-Item 'C:\Program Files\VcXsrv\*' 'src-tauri\vcxsrv\' -Recurse -Force
           Write-Host "Staged VcXsrv size: $((Get-ChildItem 'src-tauri\vcxsrv' -Recurse | Measure-Object -Sum Length).Sum) bytes"
 
+      - name: Stage Helix for bundling
+        run: python scripts/stage-helix.py ${{ matrix.name }}
+
       # Two build modes. Platforms with bundles (Windows / Linux / macOS)
       # go through `cargo tauri build` so the installer bundler runs and
       # produces the updater artifacts (.app.tar.gz on macOS, .AppImage
@@ -263,6 +266,7 @@ jobs:
           mkdir -p "$STAGE"
           cp "target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "$STAGE/"
           cp README.md "$STAGE/"
+          cp -r src-tauri/helix "$STAGE/"
           if [ -f LICENSE ]; then cp LICENSE "$STAGE/"; fi
           if [ "${{ matrix.name }}" = "windows-x86_64" ]; then
             # VcXsrv is already staged at src-tauri/vcxsrv/ by the
