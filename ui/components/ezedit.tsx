@@ -5,18 +5,20 @@ import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { getSetting } from '@/lib/settings';
 import { createOutputChannel } from '@/lib/ssh';
+import { remoteEditCommand } from '@/lib/remote-cwd';
 import { api, errMessage } from '@/lib/tauri';
 import { toast } from '@/lib/toast';
 import { createTerminal, type TerminalBundle } from '@/lib/xterm';
 
-export function EzEdit({ connectionId, localCwd, visible, onClose }: {
+export function EzEdit({ connectionId, localCwd, remoteCwd, visible, onClose }: {
   connectionId: number;
   localCwd?: string | null;
+  remoteCwd?: string | null;
   visible: boolean;
   onClose: () => void;
 }) {
   const isLocal = localCwd !== undefined;
-  const [command, setCommand] = useState('ezedit ');
+  const [command, setCommand] = useState(() => remoteCwd ? remoteEditCommand(remoteCwd) : 'ezedit ');
   const [path, setPath] = useState('');
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);

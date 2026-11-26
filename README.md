@@ -25,7 +25,10 @@ on those platforms.
 ## Edit a file with Helix
 
 In a connected SSH tab, press **Ctrl+Shift+E** or choose **ezedit…** from
-the terminal's right-click menu. Enter `ezedit /absolute/path/to/file`
+the terminal's right-click menu at an idle shell prompt. ezTerm runs `pwd`
+in that same SSH shell and prefills `ezedit /current/folder/`; append the
+file name, or replace it with another absolute path. If the shell does not
+report its folder within three seconds, enter `ezedit /absolute/path/to/file`
 in the ezTerm command prompt. Paths with spaces can be entered as-is.
 
 Helix opens in the same tab using the bundled local editor. Use

@@ -29,6 +29,7 @@ import {
 } from '@/lib/reconnect';
 import { ReconnectLoop } from '@/lib/reconnect-loop';
 import { LOCAL_FILE_DROP, parseLocalCwd, type LocalFileDrop } from '@/lib/local-file-drop';
+import { parseRemoteCwd, remoteCwdCommand } from '@/lib/remote-cwd';
 
 /** How a connect attempt ended — drives the auto-reconnect loop.
  *  - `fatal`: the user has to act (host-key prompt, auth fix, X server,
@@ -115,6 +116,7 @@ function safeFit(bundle: TerminalBundle) {
 
 export function TerminalView({ tab, visible }: Props) {
   const localCwdRef = useRef<string | null>(null);
+  const remoteCwdProbe = useRef<{ token: string; finish: (cwd: string | null) => void; cancel: () => void } | null>(null);
   const [localCwd, setLocalCwd] = useState<string | null>(null);
   const localCopyBusy = useRef(false);
   const logSaveBusy = useRef(false);
@@ -174,6 +176,7 @@ export function TerminalView({ tab, visible }: Props) {
   const [editTarget, setEditTarget] = useState<{
     connectionId: number;
     localCwd?: string | null;
+    remoteCwd?: string | null;
   } | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [authFix, setAuthFix] = useState(false);
@@ -219,9 +222,31 @@ export function TerminalView({ tab, visible }: Props) {
   function openEzEdit() {
     const connectionId = connectionIdRef.current;
     if (connectionId === null) return false;
-    setEditTarget({ connectionId, localCwd: isLocalShell ? localCwdRef.current : undefined });
+    if (isLocalShell) {
+      setEditTarget({ connectionId, localCwd: localCwdRef.current });
+      return true;
+    }
+    if (remoteCwdProbe.current) return true;
+    const token = crypto.randomUUID();
+    const cancel = () => {
+      window.clearTimeout(timer);
+      remoteCwdProbe.current = null;
+    };
+    const finish = (cwd: string | null) => {
+      cancel();
+      if (connectionIdRef.current !== connectionId) return;
+      if (!cwd) toast.danger('Remote folder unavailable', 'Run ezedit from an idle shell prompt, or enter an absolute path.');
+      setEditTarget({ connectionId, remoteCwd: cwd });
+    };
+    const timer = window.setTimeout(() => finish(null), 3000);
+    remoteCwdProbe.current = { token, finish, cancel };
+    // The current interactive shell knows the directory after cd, unlike SFTP
+    // or an independent exec channel. OSC keeps pwd output out of the screen.
+    void api.sshWrite(connectionId, Array.from(new TextEncoder().encode(remoteCwdCommand(token))))
+      .catch(() => { if (remoteCwdProbe.current?.token === token) finish(null); });
     return true;
   }
+  useEffect(() => () => remoteCwdProbe.current?.cancel(), []);
   const termApiRef = useRef({
     write:      isLocal ? api.localWrite      : api.sshWrite,
     resize:     isLocal ? api.localResize     : api.sshResize,
@@ -597,6 +622,16 @@ export function TerminalView({ tab, visible }: Props) {
         return false;
       });
     }
+    if (tab.session.session_kind === 'ssh') {
+      bundle.terminal.parser.registerOscHandler(777, (value) => {
+        const probe = remoteCwdProbe.current;
+        if (!probe) return false;
+        const cwd = parseRemoteCwd(value, probe.token);
+        if (cwd === null) return false;
+        probe.finish(cwd);
+        return true;
+      });
+    }
     if (tab.session.session_kind === 'local') {
       bundle.terminal.parser.registerOscHandler(777, (value) => {
         if (!value.startsWith('ezterm-cwd;')) return false;
@@ -943,6 +978,7 @@ export function TerminalView({ tab, visible }: Props) {
         <EzEdit
           connectionId={editTarget.connectionId}
           localCwd={editTarget.localCwd}
+          remoteCwd={editTarget.remoteCwd}
           visible={visible}
           onClose={() => setEditTarget(null)}
         />
