@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { getSetting } from '@/lib/settings';
 import { createOutputChannel } from '@/lib/ssh';
 import { remoteEditCommand } from '@/lib/remote-cwd';
-import { api, errMessage } from '@/lib/tauri';
+import { api, errMessage, type EzEditEncoding } from '@/lib/tauri';
 import { toast } from '@/lib/toast';
 import { createTerminal, type TerminalBundle } from '@/lib/xterm';
 
@@ -25,6 +25,12 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
   });
   const [path, setPath] = useState(initialPath ?? '');
   const [error, setError] = useState('');
+  const [encoding, setEncoding] = useState<EzEditEncoding | null>(null);
+  const [encodingPrompt, setEncodingPrompt] = useState<{
+    path: string;
+    detected: EzEditEncoding | null;
+  } | null>(null);
+  const encodingButton = useRef<HTMLButtonElement>(null);
   const [ready, setReady] = useState(false);
   const mount = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -35,9 +41,10 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
 
   useEffect(() => {
     if (!visible) return;
-    if (!path) input.current?.focus();
+    if (encodingPrompt) encodingButton.current?.focus();
+    else if (!path) input.current?.focus();
     else if (ready) bundleRef.current?.terminal.focus();
-  }, [visible, path, ready]);
+  }, [visible, path, ready, encodingPrompt]);
 
   useEffect(() => {
     const container = mount.current;
@@ -106,11 +113,18 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
 
       const size: [number, number] = [terminal.cols, terminal.rows];
       const editing = localCwd === undefined
-        ? api.ezedit(connectionId, path, size, processReady, output.channel)
-        : api.ezeditLocal(connectionId, path, localCwd, size, processReady, output.channel);
+        ? api.ezedit(connectionId, path, encoding, size, processReady, output.channel)
+        : api.ezeditLocal(connectionId, path, localCwd, encoding, size, processReady, output.channel);
       void editing
-        .then((saved) => {
-          if (saved) toast.success('Remote file saved', path);
+        .then((result) => {
+          if (result.status === 'choose_encoding') {
+            if (active) {
+              setEncodingPrompt({ path, detected: result.detected });
+              setPath('');
+            }
+            return;
+          }
+          if (result.saved) toast.success(localCwd === undefined ? 'Remote file saved' : 'Local file saved', path);
           if (active) onCloseRef.current();
         })
         .catch((cause: unknown) => {
@@ -130,7 +144,7 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
       if (editorId !== null) void api.localDisconnect(editorId).catch(() => {});
       cleanup?.();
     };
-  }, [connectionId, localCwd, path]);
+  }, [connectionId, localCwd, path, encoding]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -150,6 +164,7 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
       return;
     }
     setError('');
+    setEncoding(null);
     setPath(file);
   }
 
@@ -159,7 +174,23 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
       onKeyDown={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}
     >
-      {!path ? (
+      {encodingPrompt ? (
+        <div className="w-[34rem] max-w-[94%] rounded border border-border bg-surface p-4 shadow-dialog"
+          onKeyDown={(event) => { if (event.key === 'Escape') onClose(); }}>
+          <p className="text-sm font-medium">This file could not be opened as UTF-8</p>
+          <p className="my-2 break-all font-mono text-xs text-muted">{encodingPrompt.path}</p>
+          {encodingPrompt.detected && <p className="mb-3 text-sm">Detected encoding: ISO-8859-1 (estimated)</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-ghost" onClick={onClose}>Close</button>
+            <button type="button" className="btn-ghost" onClick={() => setEncodingPrompt(null)}>Back</button>
+            <button type="button" ref={encodingButton} className="btn-primary" onClick={() => {
+              setEncoding('iso-8859-1');
+              setPath(encodingPrompt.path);
+              setEncodingPrompt(null);
+            }}>{encodingPrompt.detected ? 'Open as ISO-8859-1' : 'Try ISO-8859-1'}</button>
+          </div>
+        </div>
+      ) : !path ? (
         <form onSubmit={submit} className="w-[34rem] max-w-[94%] rounded border border-border bg-surface p-4 shadow-dialog">
           <label className="block text-sm font-medium" htmlFor={`ezedit-${connectionId}`}>{isLocal ? 'Edit a local file' : 'Edit a remote file'}</label>
           <input
@@ -182,7 +213,7 @@ export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible
       ) : (
         <div className="flex h-full w-full flex-col bg-bg">
           <div className="flex items-center justify-between gap-3 border-b border-border px-3 py-1 text-xs">
-            <span className="min-w-0 truncate font-mono" title={path}>Helix · {path}</span>
+            <span className="min-w-0 truncate font-mono" title={path}>Helix · {path}{encoding && ' · ISO-8859-1'}</span>
             <span className="shrink-0 text-muted">{ready ? ':wq to save and close · :q! to discard unsaved edits' : 'Opening file…'}</span>
           </div>
           <div ref={mount} className="min-h-0 flex-1 p-1" />

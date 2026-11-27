@@ -12,6 +12,11 @@ import type {
   SyncStatus, S3ConfigInput,
 } from './types';
 
+export type EzEditEncoding = 'iso-8859-1';
+export type EzEditOutcome =
+  | { status: 'finished'; saved: boolean }
+  | { status: 'choose_encoding'; detected: EzEditEncoding | null };
+
 export function errMessage(e: unknown): string {
   if (typeof e === 'object' && e !== null && 'message' in e) {
     return String((e as AppErrorPayload).message);
@@ -152,10 +157,10 @@ export const api = {
   knownHostList:   () => invoke<KnownHost[]>('known_host_list'),
   knownHostRemove: (host: string, port: number) => invoke<void>('known_host_remove', { host, port }),
 
-  ezedit: (connectionId: number, path: string, size: [number, number], ready: Channel<number>, output: Channel<ArrayBuffer>) =>
-    invoke<boolean>('ezedit', { connectionId, path, size, ready, output }),
-  ezeditLocal: (connectionId: number, path: string, cwd: string | null, size: [number, number], ready: Channel<number>, output: Channel<ArrayBuffer>) =>
-    invoke<void>('ezedit_local', { connectionId, file: { path, cwd }, size, ready, output }),
+  ezedit: (connectionId: number, path: string, encoding: EzEditEncoding | null, size: [number, number], ready: Channel<number>, output: Channel<ArrayBuffer>) =>
+    invoke<EzEditOutcome>('ezedit', { connectionId, path, encoding, size, ready, output }),
+  ezeditLocal: (connectionId: number, path: string, cwd: string | null, encoding: EzEditEncoding | null, size: [number, number], ready: Channel<number>, output: Channel<ArrayBuffer>) =>
+    invoke<EzEditOutcome>('ezedit_local', { connectionId, file: { path, cwd }, encoding, size, ready, output }),
 
   // SFTP
   sftpOpen:     (connectionId: number) => invoke<void>('sftp_open', { connectionId }),
