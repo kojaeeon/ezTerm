@@ -1,6 +1,6 @@
 'use client';
 import dynamic from 'next/dynamic';
-import type { CSSProperties, RefObject } from 'react';
+import { useRef, type CSSProperties, type RefObject } from 'react';
 import { useTabs, type Tab, type ViewMode } from '@/lib/tabs-store';
 import { CascadeChrome } from './cascade-chrome';
 import { SftpPane } from './sftp-pane';
@@ -42,6 +42,7 @@ export function TabSlot({
 }: Props) {
   const setActive    = useTabs((s) => s.setActive);
   const bringToFront = useTabs((s) => s.bringToFront);
+  const openRemoteEditor = useRef<((connectionId: number, path: string) => void) | null>(null);
   // Per-tab cascade selector. Subscribing to s.cascade as a whole would
   // re-render every TabSlot at 60Hz during a drag (the map reference
   // changes every rAF in setCascadeGeom). Reading just our own slice
@@ -192,7 +193,8 @@ export function TabSlot({
           // while hiding it visually in non-tabs modes.
           style={{ display: sftpVisible ? 'flex' : 'none' }}
         >
-          <SftpPane tab={tab} isVisible={sftpVisible} />
+          <SftpPane tab={tab} isVisible={sftpVisible}
+            onEzEdit={(connectionId, path) => openRemoteEditor.current?.(connectionId, path)} />
         </div>
       )}
       {forwardsMounted && (
@@ -208,7 +210,7 @@ export function TabSlot({
         className="bg-bg"
         style={{ ...hostStyle, pointerEvents: hostPointerEvents }}
       >
-        <TerminalView tab={tab} visible={kind !== 'hidden'} />
+        <TerminalView tab={tab} visible={kind !== 'hidden'} openRemoteEditor={openRemoteEditor} />
       </div>
     </div>
   );

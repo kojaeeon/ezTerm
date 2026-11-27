@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { AlertCircle, Loader2, PlugZap } from 'lucide-react';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -95,7 +95,11 @@ interface LiveConnection {
   disconnect: (id: number) => Promise<void>;
 }
 
-interface Props { tab: Tab; visible: boolean; }
+interface Props {
+  tab: Tab;
+  visible: boolean;
+  openRemoteEditor: Ref<(connectionId: number, path: string) => void>;
+}
 
 type Prompt =
   | { kind: 'untrusted'; fingerprint: string; expectedFingerprint?: undefined }
@@ -114,7 +118,7 @@ function safeFit(bundle: TerminalBundle) {
   }
 }
 
-export function TerminalView({ tab, visible }: Props) {
+export function TerminalView({ tab, visible, openRemoteEditor }: Props) {
   const localCwdRef = useRef<string | null>(null);
   const remoteCwdProbe = useRef<{ token: string; finish: (cwd: string | null) => void; cancel: () => void } | null>(null);
   const [localCwd, setLocalCwd] = useState<string | null>(null);
@@ -177,7 +181,20 @@ export function TerminalView({ tab, visible }: Props) {
     connectionId: number;
     localCwd?: string | null;
     remoteCwd?: string | null;
+    initialPath?: string;
   } | null>(null);
+  useImperativeHandle(openRemoteEditor, () => (connectionId, path) => {
+    if (tab.session.session_kind !== 'ssh' || connectionIdRef.current !== connectionId) {
+      toast.danger('ezedit', 'The SSH connection changed. Reopen the menu and try again.');
+      return;
+    }
+    if (editTarget !== null) {
+      toast.info('ezedit', 'Close the current editor before opening another file.');
+      return;
+    }
+    remoteCwdProbe.current?.cancel();
+    setEditTarget({ connectionId, initialPath: path });
+  }, [tab.session.session_kind, editTarget]);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [authFix, setAuthFix] = useState(false);
   const [xserverMissing, setXserverMissing] = useState(false);
@@ -979,6 +996,7 @@ export function TerminalView({ tab, visible }: Props) {
           connectionId={editTarget.connectionId}
           localCwd={editTarget.localCwd}
           remoteCwd={editTarget.remoteCwd}
+          initialPath={editTarget.initialPath}
           visible={visible}
           onClose={() => setEditTarget(null)}
         />

@@ -10,16 +10,20 @@ import { api, errMessage } from '@/lib/tauri';
 import { toast } from '@/lib/toast';
 import { createTerminal, type TerminalBundle } from '@/lib/xterm';
 
-export function EzEdit({ connectionId, localCwd, remoteCwd, visible, onClose }: {
+export function EzEdit({ connectionId, localCwd, remoteCwd, initialPath, visible, onClose }: {
   connectionId: number;
   localCwd?: string | null;
   remoteCwd?: string | null;
+  initialPath?: string;
   visible: boolean;
   onClose: () => void;
 }) {
   const isLocal = localCwd !== undefined;
-  const [command, setCommand] = useState(() => remoteCwd ? remoteEditCommand(remoteCwd) : 'ezedit ');
-  const [path, setPath] = useState('');
+  const [command, setCommand] = useState(() => {
+    if (initialPath) return `ezedit ${initialPath}`;
+    return remoteCwd ? remoteEditCommand(remoteCwd) : 'ezedit ';
+  });
+  const [path, setPath] = useState(initialPath ?? '');
   const [error, setError] = useState('');
   const [ready, setReady] = useState(false);
   const mount = useRef<HTMLDivElement>(null);

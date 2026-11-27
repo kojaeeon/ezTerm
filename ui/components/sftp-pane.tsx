@@ -129,7 +129,11 @@ function sftpColumnsMinWidth(c: SftpColumns): number {
   return c.name + c.size + FILE_MODIFIED_COL_W + SFTP_MODE_COL_W + 3 * ROW_GAP_PX + 2 * ROW_PAD_PX;
 }
 
-export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: boolean }) {
+export function SftpPane({ tab, isVisible = true, onEzEdit }: {
+  tab: Tab;
+  isVisible?: boolean;
+  onEzEdit: (connectionId: number, path: string) => void;
+}) {
   const [entries, setEntries] = useState<SftpEntry[]>([]);
   const [sort, setSort] = useState(DEFAULT_FILE_SORT);
   const onSort = (column: FileSortColumn) => setSort((current) => nextFileSort(current, column));
@@ -310,6 +314,13 @@ export function SftpPane({ tab, isVisible = true }: { tab: Tab; isVisible?: bool
       shortcut: 'Ctrl+Shift+C',
       onClick: () => { void copyAbsolutePaths(paths); },
     }, { separator: true }];
+    if (tab.session.session_kind === 'ssh' && canDownload(e)) {
+      items.push({
+        label: 'ezedit',
+        disabled: !opened || tab.status !== 'connected',
+        onClick: () => onEzEdit(cid, e.full_path),
+      });
+    }
     // If the right-clicked file is part of an active multi-selection,
     // Download applies to every selected non-directory entry and prompts
     // once for a destination folder. Otherwise it falls back to the
